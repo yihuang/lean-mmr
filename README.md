@@ -25,18 +25,10 @@ structure Acc (α : Type u) where
 The main operations are:
 
 ```lean
-empty         (α : Type u) : Acc α
-appendPeak    (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α) : Acc α
-append        (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α
-mergeUnordered (hash : α → α → α) (m : Acc α) : Chunk α → Acc α
-merge          (hash : α → α → α) (m : Acc α) : Chunk α → Option (Acc α)
-appendList     (hash : α → α → α) (initial : Acc α) (leaves : List α) : Acc α
-```
-
-where a chunk is an ordered list of aligned complete subtrees:
-
-```lean
-abbrev Chunk (α : Type u) := List (Nat × α)  -- (height, peak)
+empty      (α : Type u) : Acc α
+appendPeak (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α) : Acc α
+append     (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α
+appendList (hash : α → α → α) (initial : Acc α) (leaves : List α) : Acc α
 ```
 
 Key points:
@@ -45,9 +37,6 @@ Key points:
   `2^height` leaves, right-merging it into existing peaks while preserving
   stable leaf indices.
 - Single-leaf `append` is just `appendPeak height 0`.
-- `mergeUnordered` folds `appendPeak` over a chunk without validating it.
-- `merge` is the safe wrapper: it returns `some` only when every chunk element
-  is aligned at the moment it is pushed (`aligned m height`).
 - `appendList` is a convenience derived from repeated single-leaf `append`.
 
 Appending uses two auxiliary definitions:

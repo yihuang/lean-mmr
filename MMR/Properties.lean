@@ -212,13 +212,6 @@ theorem appendList_peaks_length_empty (α : Type) (hash : α → α → α) (lea
 
 /-- `appendList` is compositional: appending `as ++ bs` in one batch gives
 the same state as appending `as` and then `bs`. -/
-theorem mergeUnordered_append {α : Type} (hash : α → α → α) (m : Acc α) (as bs : Chunk α) :
-    mergeUnordered hash m (as ++ bs) = mergeUnordered hash (mergeUnordered hash m as) bs := by
-  induction as generalizing m with
-  | nil => simp [mergeUnordered]
-  | cons a as ih =>
-      simp [mergeUnordered, ih]
-
 theorem appendList_append {α : Type} (hash : α → α → α) (m : Acc α) (as bs : List α) :
     appendList hash m (as ++ bs) = appendList hash (appendList hash m as) bs := by
   simp [appendList, List.foldl_append]

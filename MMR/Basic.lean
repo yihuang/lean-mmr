@@ -50,16 +50,6 @@ decreasing_by
   simp_wf
   exact Nat.div_lt_self (Nat.succ_pos n) (by decide)
 
-/-- An aligned chunk of MMR peaks: each `(height, peak)` is a complete subtree
-with `2^height` leaves to be right-appended in list order. -/
-abbrev Chunk (α : Type u) := List (Nat × α)
-
-/-- Whether a peak of the given height is aligned with the current accumulator.
-This is equivalent to requiring `height` not exceed the smallest existing peak
-height (with the empty MMR accepting every height). -/
-def aligned (m : Acc α) (height : Nat) : Bool :=
-  decide (m.leafCount % 2 ^ height = 0)
-
 set_option linter.unusedVariables false in
 /-- Carry-merge:
   `mergeCarry hash c x peaks` takes the new leaf `x` and merges it with the
@@ -89,26 +79,6 @@ def appendPeak (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α)
 /-- Append one leaf: `appendPeak` with height `0`. -/
 def append (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α :=
   appendPeak hash 0 leaf m
-
-/-- Merge an aligned chunk into an accumulator without validating the chunk.
-The caller is responsible for ensuring each element is aligned in order, i.e.
-that the chunk reproduces the append-only semantics when pushed. -/
-def mergeUnordered (hash : α → α → α) (m : Acc α) : Chunk α → Acc α
-  | [] => m
-  | (height, peak) :: rest => mergeUnordered hash (appendPeak hash height peak m) rest
-
-/-- Validate and merge an aligned chunk.
-
-This is `mergeUnordered` with extra validation: every `(height, peak)` must be
-aligned at the moment it is pushed.  If validation fails, the result is `none`.
--/
-def merge (hash : α → α → α) (m : Acc α) : Chunk α → Option (Acc α)
-  | [] => some m
-  | (height, peak) :: rest =>
-    if aligned m height then
-      merge hash (appendPeak hash height peak m) rest
-    else
-      none
 
 /-- Append many leaves in order.  It is derived from `appendPeak` by treating
 each leaf as a height-0 aligned peak. -/
