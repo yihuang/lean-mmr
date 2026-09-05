@@ -55,10 +55,6 @@ has exactly `popcount leafCount` peaks. -/
 def Valid (m : Acc α) : Prop :=
   m.peaks.length = popcount m.leafCount
 
-/-- An aligned chunk: each `(height, peak)` is a complete subtree with
-`2^height` leaves, right-appended in list order. -/
-abbrev Chunk (α : Type u) := List (Nat × α)
-
 /-- A height is aligned with a leaf count when it is a multiple of the subtree
 size `2^height`.  Equivalently, `height` does not exceed the smallest existing
 peak height; the empty MMR accepts every height. -/
@@ -80,7 +76,7 @@ def aligned? (m : Acc α) (height : Nat) : Bool :=
 /-- Computably check that a chunk's peak heights are aligned with the current
 `leafCount`, returning `true` iff every height is aligned at the moment it
 would be pushed.  Only heights matter, so the peak hashes are ignored. -/
-def validChunk? (leafCount : Nat) : Chunk α → Bool
+def validChunk? (leafCount : Nat) : List (Nat × α) → Bool
   | [] => true
   | (height, _) :: rest =>
     if alignedAt? leafCount height then
@@ -106,9 +102,10 @@ def mergeCarry : Nat → α → List α → List α
 /-- Append a complete subtree of `2^height` leaves whose root is `peak`.
 
 This is the primitive MMR right-merge and is deliberately total/permissive:
-it does not check `aligned m height`.  `aligned` is only the condition under
-which the append-only semantic (stable leaf indices and the canonical peak
-count) is preserved.  Appending a single leaf is the special case `height = 0`.
+it does not check `aligned m height`.  The canonical peak-count invariant is
+preserved for every height; `aligned` is only needed for the stronger
+append-only structural semantics (stable leaf indices).  Appending a single
+leaf is the special case `height = 0`.
 
 `mergeCarry` is reused with the carry starting at the given `height`: the number
 of existing peaks consumed is the number of trailing 1s in `leafCount / 2^height`.
@@ -124,13 +121,13 @@ def append (m : Acc α) (leaf : α) : Acc α :=
 /-- Fold a chunk into an accumulator in order.  Like `appendPeak`, this function
 is permissive and does not enforce `ValidChunk`; callers wanting append-only
 semantics should provide a `ValidChunk`. -/
-def appendPeaks (m : Acc α) (chunk : Chunk α) : Acc α :=
+def appendPeaks (m : Acc α) (chunk : List (Nat × α)) : Acc α :=
   chunk.foldl (fun acc hp => appendPeak hash hp.1 hp.2 acc) m
 
 /-- A chunk satisfies the aligned condition when every element is aligned at the
 moment it is pushed.  This is the precondition for preserving append-only
 semantics; it is not enforced by `appendPeaks`. -/
-def ValidChunk (m : Acc α) : Chunk α → Prop
+def ValidChunk (m : Acc α) : List (Nat × α) → Prop
   | [] => True
   | (height, peak) :: rest =>
     aligned m height ∧ ValidChunk (appendPeak hash height peak m) rest

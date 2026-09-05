@@ -15,7 +15,7 @@ The hash function is abstract. All operations are parameterized by an arbitrary 
 
 - **Minimal state**: no internal tree storage; only peak hashes and the leaf count are retained.
 - **Append-only core**: `appendPeak`, `append`, and `appendPeaks` support appending single leaves, aligned subtrees, and ordered chunks.
-- **Aligned precondition**: `ValidChunk` is the machine-checkable alignment predicate that guarantees canonical MMR behavior when appending peaks.
+- **Aligned precondition**: `ValidChunk` is the machine-checkable alignment predicate for append-only structural semantics. It is distinct from the `Valid` peak-count invariant and is not needed to prove it.
 - **Verified invariants**: the structural properties of peak counts and leaf counts are proved in Lean, independent of the concrete hash.
 
 ## Design
@@ -37,8 +37,8 @@ def Valid (m : Acc α) : Prop
 def appendPeak (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α) : Acc α
 def append (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α :=
   appendPeak hash 0 leaf m
-def appendPeaks (hash : α → α → α) (m : Acc α) (chunk : Chunk α) : Acc α
-def ValidChunk (hash : α → α → α) (m : Acc α) (chunk : Chunk α) : Prop
+def appendPeaks (hash : α → α → α) (m : Acc α) (chunk : List (Nat × α)) : Acc α
+def ValidChunk (hash : α → α → α) (m : Acc α) (chunk : List (Nat × α)) : Prop
 
 end Acc
 end MMR
@@ -50,13 +50,17 @@ Key points:
 - `append` is `appendPeak` at height `0`, as shown in the one-liner above.
 - `appendPeaks` folds `appendPeak` over an ordered chunk.
 - `Valid` is the canonical peak-count invariant: `m.Valid` means `m.peaks.length = popcount m.leafCount`.
-- `ValidChunk` is the alignment predicate used in the proofs.
+- `ValidChunk` is the alignment predicate for append-only structural semantics.
 
 Although internal nodes are not stored, a canonical root can be computed on demand from the minimal state by “bagging the peaks”: fold the peaks from right to left with `hash`, optionally including `leafCount` as a domain-separation prefix. This needs only the already-available `peaks` and `leafCount`, so no full tree is required to derive a root.
 
 ## Verified properties
 
-`MMR/Properties.lean` contains machine-checked proofs of the accumulator’s central structural invariants:
+`MMR/Properties.lean` contains machine-checked proofs of the accumulator’s central structural invariants.
+
+### Core invariants
+
+These results hold without any alignment condition:
 
 - **The empty accumulator satisfies the canonical invariant.**
 
@@ -72,20 +76,18 @@ Although internal nodes are not stored, a canonical root can be computed on dema
       (append hash m leaf).Valid
   ```
 
-- **Aligned subtree append preserves the canonical invariant.**
+- **Subtree append preserves the canonical invariant.**
 
   ```lean
   theorem appendPeak_peaks_length {α : Type u} (hash : α → α → α) (m : Acc α) (height : Nat) (peak : α)
-      (halign : aligned m height)
       (h : m.Valid) :
       (appendPeak hash height peak m).Valid
   ```
 
-- **Valid chunks preserve the canonical invariant when appended in order.**
+- **Chunk append preserves the canonical invariant for any chunk.**
 
   ```lean
-  theorem appendPeaks_peaks_length {α : Type u} (hash : α → α → α) (m : Acc α) (chunk : Chunk α)
-      (hvalid : ValidChunk hash m chunk)
+  theorem appendPeaks_peaks_length {α : Type u} (hash : α → α → α) (m : Acc α) (chunk : List (Nat × α))
       (h : m.Valid) :
       (appendPeaks hash m chunk).Valid
   ```
@@ -93,14 +95,18 @@ Although internal nodes are not stored, a canonical root can be computed on dema
 - **The leaf count tracks the number of appended leaves exactly.**
 
   ```lean
-  theorem appendPeaks_leafCount {α : Type u} (hash : α → α → α) (m : Acc α) (chunk : Chunk α) :
+  theorem appendPeaks_leafCount {α : Type u} (hash : α → α → α) (m : Acc α) (chunk : List (Nat × α)) :
       (appendPeaks hash m chunk).leafCount =
         m.leafCount + chunk.foldl (fun acc hp => acc + 2 ^ hp.1) 0
   ```
 
 - **Supporting binary-carry lemmas**, including the one-step peak-count recurrence and the length behavior of `mergeCarry`.
 
-All proofs are independent of the concrete hash function.
+### Append-only semantics are not yet formalized
+
+`ValidChunk` is the API-level precondition intended for aligned, append-only structural semantics: it records that every `(height, peak)` in a chunk is aligned when it is pushed. It is not needed for the core invariants above, and preservation of the append-only structural semantics is not currently proved in this repository.
+
+All proofs in this section are independent of the concrete hash function.
 
 ## Repository layout
 

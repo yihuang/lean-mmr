@@ -14,9 +14,13 @@ accumulator:
 1. Starting from the empty MMR, after appending `n` leaves the number of
    peaks is exactly the popcount of `n` (`popcount` counts the 1-bits in the
    binary representation of `n`).
-2. Appending peaks preserves the canonical MMR invariant under the aligned
-   condition: `ValidChunk` guarantees every peak is aligned when it is pushed.
+2. `append`, `appendPeak`, and `appendPeaks` all preserve the canonical
+   peak-count invariant `Valid`; no alignment condition is needed for this
+   invariant.
 3. `leafCount` is always the number of leaves appended so far.
+4. `ValidChunk` is provided as the API-level precondition for aligned,
+   append-only structural semantics. Formalizing preservation of those
+   semantics is not part of this file.
 
 No assumptions about the hash function are needed.
 
@@ -154,6 +158,86 @@ theorem popcount_shift (q h : Nat) : popcount (2 ^ h * q) = popcount q := by
         simpa using this
       rw [hstep, ih]
 
+/-- Popcount of a shifted number plus a low remainder is the sum of the two
+popcounts, as long as the remainder fits below the shift. -/
+theorem popcount_shift_add (q r h : Nat) (hr : r < 2 ^ h) :
+    popcount (2 ^ h * q + r) = popcount q + popcount r := by
+  induction h generalizing r with
+  | zero =>
+      have hr0 : r = 0 := by omega
+      simp [hr0, popcount]
+  | succ h ih =>
+      rcases Nat.mod_two_eq_zero_or_one r with hmod | hmod
+      · let k := r / 2
+        have hdm := Nat.div_add_mod r 2
+        have hr_eq : r = 2 * k := by
+          dsimp [k]
+          omega
+        have hpow : 2 ^ (h + 1) = 2 * 2 ^ h := by
+          rw [Nat.pow_succ']
+        have hr' : r < 2 * 2 ^ h := by
+          simpa [hpow] using hr
+        have hk_lt : k < 2 ^ h := by
+          dsimp [k]
+          omega
+        have hmul : 2 ^ (h + 1) * q + r = 2 * (2 ^ h * q + k) := by
+          rw [hpow, hr_eq]
+          rw [Nat.mul_add, Nat.mul_assoc]
+        rw [hmul, popcount_even]
+        rw [ih k hk_lt]
+        rw [hr_eq, popcount_even]
+      · let k := r / 2
+        have hdm := Nat.div_add_mod r 2
+        have hr_eq : r = 2 * k + 1 := by
+          dsimp [k]
+          omega
+        have hpow : 2 ^ (h + 1) = 2 * 2 ^ h := by
+          rw [Nat.pow_succ']
+        have hr' : r < 2 * 2 ^ h := by
+          simpa [hpow] using hr
+        have hk_lt : k < 2 ^ h := by
+          dsimp [k]
+          omega
+        have hmul : 2 ^ (h + 1) * q + r = 2 * (2 ^ h * q + k) + 1 := by
+          rw [hpow, hr_eq]
+          rw [Nat.mul_add, Nat.mul_assoc]
+          omega
+        rw [hmul, popcount_odd]
+        rw [ih k hk_lt]
+        rw [hr_eq, popcount_odd]
+        omega
+
+/-- Adding `2^h` to `n` follows the same carry rule as adding one to
+`n / 2^h`: the number of trailing ones of `n / 2^h` is the number of peaks
+merged. -/
+theorem popcount_add_pow (n h : Nat) :
+    popcount (n + 2 ^ h) = popcount n - trailingOnes (n / 2 ^ h) + 1 := by
+  let q := n / 2 ^ h
+  let r := n % 2 ^ h
+  have hr : r < 2 ^ h := by
+    dsimp [r]
+    exact Nat.mod_lt n (Nat.two_pow_pos h)
+  have hdec : 2 ^ h * q + r = n := by
+    dsimp [q, r]
+    exact Nat.div_add_mod n (2 ^ h)
+  have hpopn : popcount n = popcount q + popcount r := by
+    have hp := popcount_shift_add q r h hr
+    rwa [hdec] at hp
+  have hnext : n + 2 ^ h = 2 ^ h * (q + 1) + r := by
+    rw [← hdec]
+    rw [Nat.mul_add, Nat.mul_one]
+    omega
+  have hpopnext : popcount (n + 2 ^ h) = popcount (q + 1) + popcount r := by
+    rw [hnext]
+    exact popcount_shift_add (q + 1) r h hr
+  rw [hpopnext]
+  rw [hpopn]
+  change popcount (q + 1) + popcount r =
+    (popcount q + popcount r) - trailingOnes q + 1
+  rw [popcount_succ_eq_sub q]
+  have ht : trailingOnes q ≤ popcount q := trailingOnes_le_popcount q
+  omega
+
 end BitArithmetic
 
 /-! ## `mergeCarry`
@@ -231,9 +315,8 @@ theorem appendPeak_leafCount (h : Nat) (peak : α) (m : Acc α) :
     (appendPeak hash h peak m).leafCount = m.leafCount + 2 ^ h := by
   simp [appendPeak]
 
-/-- `appendPeak` preserves the canonical invariant when the peak is aligned. -/
+/-- `appendPeak` preserves the canonical invariant, without requiring an aligned height. -/
 theorem appendPeak_peaks_length (m : Acc α) (height : Nat) (peak : α)
-    (halign : aligned m height)
     (h : m.Valid) :
     (appendPeak hash height peak m).Valid := by
   unfold Valid
@@ -242,36 +325,32 @@ theorem appendPeak_peaks_length (m : Acc α) (height : Nat) (peak : α)
     simpa [Valid] using h
   let n := m.leafCount
   let q := n / 2 ^ height
-  have hpowpos : 0 < 2 ^ height := Nat.two_pow_pos height
-  have hmod : n % 2^height = 0 := halign
-  have hnmul : n = 2^height * q := by
+  have hmod : n % 2 ^ height < 2 ^ height := Nat.mod_lt n (Nat.two_pow_pos height)
+  have hdec : 2 ^ height * q + n % 2 ^ height = n := by
     dsimp [q]
-    have hdm := Nat.div_add_mod n (2 ^ height)
-    omega
-  have hpopn : popcount n = popcount q := by
-    rw [hnmul]
-    rw [popcount_shift q height]
+    exact Nat.div_add_mod n (2 ^ height)
+  have hpopn : popcount n = popcount q + popcount (n % 2 ^ height) := by
+    have hp := popcount_shift_add q (n % 2 ^ height) height hmod
+    rwa [hdec] at hp
   have hc : trailingOnes q ≤ m.peaks.length := by
-    rw [h', hpopn]
-    exact trailingOnes_le_popcount q
+    rw [h']
+    change trailingOnes q ≤ popcount n
+    have hle : trailingOnes q ≤ popcount q := trailingOnes_le_popcount q
+    have hqle : popcount q ≤ popcount n := by
+      rw [hpopn]
+      omega
+    omega
   have hmerge := mergeCarry_length_eq hash (trailingOnes q) peak m.peaks
   change (mergeCarry hash (trailingOnes (m.leafCount / 2 ^ height)) peak m.peaks).length =
     popcount (m.leafCount + 2 ^ height)
   rw [hmerge]
   rw [if_pos hc]
-  have hnext : m.leafCount + 2^height = 2^height * (q+1) := by
-    change n + 2^height = 2^height * (q + 1)
-    rw [hnmul]
-    rw [Nat.mul_add, Nat.mul_one]
-  rw [hnext]
-  rw [popcount_shift (q+1) height]
-  rw [popcount_succ_eq_sub]
-  have hpeq : m.peaks.length = popcount q := by
-    rw [h', hpopn]
-  rw [hpeq]
+  rw [h']
+  change popcount n - trailingOnes q + 1 = popcount (n + 2 ^ height)
+  rw [popcount_add_pow n height]
 
 /-- Folding leaf contributions over a chunk commutes with adding a base. -/
-theorem chunk_foldl_add (chunk : Chunk α) (x : Nat) :
+theorem chunk_foldl_add (chunk : List (Nat × α)) (x : Nat) :
     chunk.foldl (fun acc hp => acc + 2 ^ hp.1) x = x + chunk.foldl (fun acc hp => acc + 2 ^ hp.1) 0 := by
   induction chunk generalizing x with
   | nil => simp
@@ -285,7 +364,7 @@ theorem chunk_foldl_add (chunk : Chunk α) (x : Nat) :
         rw [ih (x + 2 ^ h), hfold]
         omega
 
-theorem appendPeaks_leafCount (m : Acc α) (chunk : Chunk α) :
+theorem appendPeaks_leafCount (m : Acc α) (chunk : List (Nat × α)) :
     (appendPeaks hash m chunk).leafCount = m.leafCount + chunk.foldl (fun acc hp => acc + 2 ^ hp.1) 0 := by
   induction chunk generalizing m with
   | nil => simp [appendPeaks]
@@ -300,30 +379,19 @@ theorem appendPeaks_leafCount (m : Acc α) (chunk : Chunk α) :
         rw [chunk_foldl_add rest (2 ^ h)]
         omega
 
-/-- `appendPeaks` preserves the canonical invariant when every peak is aligned. -/
-theorem appendPeaks_peaks_length (m : Acc α) (chunk : Chunk α)
-    (hvalid : ValidChunk hash m chunk)
+/-- `appendPeaks` preserves the canonical invariant for any chunk. -/
+theorem appendPeaks_peaks_length (m : Acc α) (chunk : List (Nat × α))
     (h : m.Valid) :
     (appendPeaks hash m chunk).Valid := by
-  unfold Valid
-  rw [appendPeaks_leafCount]
   induction chunk generalizing m with
   | nil =>
-      simp [appendPeaks, ValidChunk] at hvalid ⊢
-      simpa [Valid] using h
+      simpa [appendPeaks] using h
   | cons hp rest ih =>
       cases hp with
       | mk height peak =>
-        have hvalid' : ValidChunk hash (appendPeak hash height peak m) rest := hvalid.2
-        have halign : aligned m height := hvalid.1
-        have hstep : (appendPeak hash height peak m).Valid :=
-          appendPeak_peaks_length hash m height peak halign h
-        have hrest := ih (appendPeak hash height peak m) hvalid' hstep
-        -- hrest gives the tail length in terms of the intermediate leafCount.
-        simp only [appendPeaks, List.foldl_cons] at *
-        rw [hrest]
-        rw [appendPeak_leafCount]
-        simp [chunk_foldl_add rest (2 ^ height), Nat.add_assoc]
+        change Valid (appendPeaks hash (appendPeak hash height peak m) rest)
+        exact ih (appendPeak hash height peak m)
+          (appendPeak_peaks_length hash m height peak h)
 
 end AppendPeaks
 
