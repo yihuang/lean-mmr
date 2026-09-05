@@ -83,15 +83,19 @@ def validChunk? (leafCount : Nat) : Chunk α → Bool
     else
       false
 
+section HashOps
+variable {α : Type u}
+variable (hash : α → α → α)
+
 /-- Carry-merge:
-  `mergeCarry hash c x peaks` takes the new leaf `x` and merges it with the
+  `mergeCarry c x peaks` takes the new leaf `x` and merges it with the
   first `c` entries of `peaks` (the rightmost peaks).  The first merge is
   `hash p x` because `p` is the older (left) peak and `x` is the newer
   (right) peak.  Subsequent merges hash the older peak with the previously
   computed parent. -/
-def mergeCarry (hash : α → α → α) : Nat → α → List α → List α
+def mergeCarry : Nat → α → List α → List α
   | 0, x, peaks => x :: peaks
-  | n + 1, x, p :: peaks => mergeCarry hash n (hash p x) peaks
+  | n + 1, x, p :: peaks => mergeCarry n (hash p x) peaks
   | _, x, [] => [x] -- unreachable for valid states; keeps definition total
 
 /-- Append a complete subtree of `2^height` leaves whose root is `peak`.
@@ -104,27 +108,28 @@ count) is preserved.  Appending a single leaf is the special case `height = 0`.
 `mergeCarry` is reused with the carry starting at the given `height`: the number
 of existing peaks consumed is the number of trailing 1s in `leafCount / 2^height`.
 -/
-def appendPeak (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α) : Acc α :=
+def appendPeak (height : Nat) (peak : α) (m : Acc α) : Acc α :=
   { peaks := mergeCarry hash (trailingOnes (m.leafCount / 2 ^ height)) peak m.peaks,
     leafCount := m.leafCount + 2 ^ height }
 
 /-- Append one leaf: `appendPeak` with height `0`. -/
-def append (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α :=
+def append (m : Acc α) (leaf : α) : Acc α :=
   appendPeak hash 0 leaf m
 
 /-- Fold a chunk into an accumulator in order.  Like `appendPeak`, this function
 is permissive and does not enforce `ValidChunk`; callers wanting append-only
 semantics should provide a `ValidChunk`. -/
-def appendPeaks (hash : α → α → α) (m : Acc α) (chunk : Chunk α) : Acc α :=
+def appendPeaks (m : Acc α) (chunk : Chunk α) : Acc α :=
   chunk.foldl (fun acc hp => appendPeak hash hp.1 hp.2 acc) m
 
 /-- A chunk satisfies the aligned condition when every element is aligned at the
 moment it is pushed.  This is the precondition for preserving append-only
 semantics; it is not enforced by `appendPeaks`. -/
-def ValidChunk (hash : α → α → α) (m : Acc α) : Chunk α → Prop
+def ValidChunk (m : Acc α) : Chunk α → Prop
   | [] => True
   | (height, peak) :: rest =>
-    aligned m height ∧ ValidChunk hash (appendPeak hash height peak m) rest
+    aligned m height ∧ ValidChunk (appendPeak hash height peak m) rest
 
+end HashOps
 end Acc
 end MMR
