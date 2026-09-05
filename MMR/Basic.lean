@@ -8,8 +8,8 @@ universe u
 This file gives an append-only Merkle Mountain Range (MMR) implementation
 whose only stored state is:
 
-* a list of peak hashes `peaks`, ordered from the newest/rightmost peak to
-  the oldest/leftmost peak; and
+* a list of peak hashes `peaks`, ordered by increasing height, i.e. from the
+  smallest (newest/rightmost) peak to the largest (oldest/leftmost) peak; and
 * the number of leaves `leafCount`.
 
 The hash function is abstract: any binary function `hash : α → α → α` can be
@@ -17,7 +17,7 @@ used.  Structural properties (leaf-count/peak-count invariants and merge
 behavior) do not depend on the actual cryptographic hash.
 -/
 
-/-- A minimal MMR accumulator: peaks (newest/rightmost first) and leaf count. -/
+/-- A minimal MMR accumulator: peaks (smallest height / newest first) and leaf count. -/
 structure Acc (α : Type u) where
   peaks : List α
   leafCount : Nat

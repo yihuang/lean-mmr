@@ -4,7 +4,7 @@ A minimal Merkle Mountain Range (MMR) accumulator implemented in Lean 4.
 
 The implementation stores only:
 
-- `peaks : List α` — peak hashes, newest/rightmost first, and
+- `peaks : List α` — peak hashes, smallest height (newest/rightmost) first, and
 - `leafCount : Nat` — number of leaves appended so far.
 
 The hash algorithm is kept abstract: `append` is parameterized by an arbitrary
@@ -18,7 +18,7 @@ The core data structure is defined in `MMR/Basic.lean`:
 
 ```lean
 structure Acc (α : Type u) where
-  peaks : List α   -- newest/rightmost peak first
+  peaks : List α   -- smallest height (newest/rightmost) first
   leafCount : Nat
 ```
 
