@@ -50,6 +50,16 @@ decreasing_by
   simp_wf
   exact Nat.div_lt_self (Nat.succ_pos n) (by decide)
 
+/-- An aligned chunk: each `(height, peak)` is a complete subtree with
+`2^height` leaves, right-appended in list order. -/
+abbrev Chunk (α : Type u) := List (Nat × α)
+
+/-- A height is aligned with an accumulator when the current leaf count is a
+multiple of the subtree size `2^height`.  Equivalently, `height` does not
+exceed the smallest existing peak height; the empty MMR accepts every height. -/
+def aligned (m : Acc α) (height : Nat) : Prop :=
+  m.leafCount % 2 ^ height = 0
+
 set_option linter.unusedVariables false in
 /-- Carry-merge:
   `mergeCarry hash c x peaks` takes the new leaf `x` and merges it with the
@@ -80,10 +90,19 @@ def appendPeak (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α)
 def append (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α :=
   appendPeak hash 0 leaf m
 
-/-- Append many leaves in order.  It is derived from `appendPeak` by treating
-each leaf as a height-0 aligned peak. -/
-def appendList (hash : α → α → α) (initial : Acc α) (leaves : List α) : Acc α :=
-  leaves.foldl (fun acc leaf => append hash acc leaf) initial
+/-- Fold a list of aligned peaks into an accumulator in order.  Each peak is a
+complete subtree of `2^height` leaves, so this is more general than appending
+a list of individual leaves. -/
+def appendPeaks (hash : α → α → α) (m : Acc α) : Chunk α → Acc α
+  | [] => m
+  | (height, peak) :: rest => appendPeaks hash (appendPeak hash height peak m) rest
+
+/-- A chunk is valid for append-only semantics when every element is aligned at
+the moment it is pushed. -/
+def ValidChunk (hash : α → α → α) (m : Acc α) : Chunk α → Prop
+  | [] => True
+  | (height, peak) :: rest =>
+    aligned m height ∧ ValidChunk hash (appendPeak hash height peak m) rest
 
 end Acc
 end MMR

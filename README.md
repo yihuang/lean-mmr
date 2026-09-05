@@ -25,10 +25,10 @@ structure Acc (α : Type u) where
 The main operations are:
 
 ```lean
-empty      (α : Type u) : Acc α
-appendPeak (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α) : Acc α
-append     (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α
-appendList (hash : α → α → α) (initial : Acc α) (leaves : List α) : Acc α
+empty       (α : Type u) : Acc α
+appendPeak  (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α) : Acc α
+appendPeaks (hash : α → α → α) (m : Acc α) : Chunk α → Acc α
+append      (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α
 ```
 
 Key points:
@@ -37,7 +37,7 @@ Key points:
   `2^height` leaves, right-merging it into existing peaks while preserving
   stable leaf indices.
 - Single-leaf `append` is just `appendPeak height 0`.
-- `appendList` is a convenience derived from repeated single-leaf `append`.
+- `appendPeaks` folds `appendPeak` over an ordered chunk.
 
 Appending uses two auxiliary definitions:
 
@@ -68,12 +68,23 @@ The machine-checked properties in `MMR/Properties.lean` include:
       (append hash m leaf).peaks.length = popcount (m.leafCount + 1)
   ```
 
-- From the empty accumulator, appending `n` leaves yields exactly `popcount n`
-  peaks:
+- `appendPeak` preserves the canonical invariant when the peak is aligned:
 
   ```lean
-  theorem appendList_peaks_length_empty (α : Type) (hash : α → α → α) (leaves : List α) :
-      (appendList hash (empty α) leaves).peaks.length = popcount leaves.length
+  theorem appendPeak_peaks_length {α : Type} (hash : α → α → α) (m : Acc α) (height : Nat) (peak : α)
+      (halign : aligned m height)
+      (h : m.peaks.length = popcount m.leafCount) :
+      (appendPeak hash height peak m).peaks.length = popcount (m.leafCount + 2 ^ height)
+  ```
+
+- `appendPeaks` preserves append-only semantics under the aligned condition:
+
+  ```lean
+  theorem appendPeaks_peaks_length {α : Type} (hash : α → α → α) (m : Acc α) (chunk : Chunk α)
+      (hvalid : ValidChunk hash m chunk)
+      (h : m.peaks.length = popcount m.leafCount) :
+      (appendPeaks hash m chunk).peaks.length =
+        popcount (m.leafCount + chunk.foldl (fun acc hp => acc + 2 ^ hp.1) 0)
   ```
 
 - The one-step binary carry relation used by the merge loop:
@@ -90,19 +101,13 @@ The machine-checked properties in `MMR/Properties.lean` include:
       (mergeCarry hash c x peaks).length = if c ≤ peaks.length then peaks.length - c + 1 else 1
   ```
 
-- `leafCount` always equals the number of appended leaves:
+- `leafCount` always equals the number of leaves added by a chunk:
 
   ```lean
-  theorem appendList_leafCount {α : Type} (hash : α → α → α) (m : Acc α) (leaves : List α) :
-      (appendList hash m leaves).leafCount = m.leafCount + leaves.length
-  ```
-
-- `appendList` is compositional, so batching appends does not change the
-  resulting accumulator:
-
-  ```lean
-  theorem appendList_append {α : Type} (hash : α → α → α) (m : Acc α) (as bs : List α) :
-      appendList hash m (as ++ bs) = appendList hash (appendList hash m as) bs
+  theorem appendPeaks_leafCount {α : Type} (hash : α → α → α) (m : Acc α) :
+      ∀ chunk : Chunk α,
+        (appendPeaks hash m chunk).leafCount =
+          m.leafCount + chunk.foldl (fun acc hp => acc + 2 ^ hp.1) 0
   ```
 
 All proofs are independent of the concrete hash function.

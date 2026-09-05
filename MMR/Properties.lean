@@ -12,9 +12,8 @@ accumulator:
 1. Starting from the empty MMR, after appending `n` leaves the number of
    peaks is exactly the popcount of `n` (`popcount` counts the 1-bits in the
    binary representation of `n`).
-2. Appending is compositional: `appendList` respects list concatenation, so
-   the resulting MMR state is independent of how a batch of leaves is split
-   across multiple `appendList` calls.
+2. Appending peaks preserves the canonical MMR invariant under the aligned
+   condition: `ValidChunk` guarantees every peak is aligned when it is pushed.
 3. `leafCount` is always the number of leaves appended so far.
 
 No assumptions about the hash function are needed.
@@ -172,70 +171,109 @@ theorem appendPeak_leafCount (hash : α → α → α) (h : Nat) (peak : α) (m 
     (appendPeak hash h peak m).leafCount = m.leafCount + 2 ^ h := by
   simp [appendPeak]
 
-theorem appendList_leafCount {α : Type} (hash : α → α → α) (m : Acc α) (leaves : List α) :
-    (appendList hash m leaves).leafCount = m.leafCount + leaves.length := by
-  induction leaves generalizing m with
-  | nil => simp [appendList]
-  | cons a as ih =>
-      simp [appendList]
-      change (appendList hash (append hash m a) as).leafCount =
-        m.leafCount + (as.length + 1)
-      have h := ih (append hash m a)
-      rw [append_leafCount] at h
-      omega
+theorem pow_pos (h : Nat) : 0 < 2 ^ h := by
+  induction h with
+  | zero => decide
+  | succ h ih => omega
 
-/-- Appending a whole list preserves the invariant, generalized to an
-arbitrary starting state satisfying it. -/
-theorem appendList_peaks_length {α : Type} (hash : α → α → α) (m : Acc α) (leaves : List α)
+theorem popcount_shift (q h : Nat) : popcount (2 ^ h * q) = popcount q := by
+  induction h with
+  | zero => simp
+  | succ h ih =>
+      have hstep : popcount (2 ^ (h+1) * q) = popcount (2 ^ h * q) := by
+        rw [Nat.pow_succ']
+        rw [Nat.mul_assoc]
+        have := popcount_even (2 ^ h * q)
+        simpa using this
+      rw [hstep, ih]
+
+theorem appendPeak_peaks_length {α : Type} (hash : α → α → α) (m : Acc α) (height : Nat) (peak : α)
+    (halign : aligned m height)
     (h : m.peaks.length = popcount m.leafCount) :
-    (appendList hash m leaves).peaks.length = popcount (m.leafCount + leaves.length) := by
-  induction leaves generalizing m with
-  | nil => simpa [appendList] using h
-  | cons a as ih =>
-      simp [appendList]
-      have h₁ : (append hash m a).peaks.length = popcount (m.leafCount + 1) := append_peaks_length hash m a h
-      have h₂ : (appendList hash (append hash m a) as).peaks.length =
-          popcount ((append hash m a).leafCount + as.length) := ih (append hash m a) h₁
-      change (appendList hash (append hash m a) as).peaks.length =
-        popcount (m.leafCount + (as.length + 1))
-      rw [h₂]
-      congr 1
-      rw [append_leafCount]
-      omega
+    (appendPeak hash height peak m).peaks.length = popcount (m.leafCount + 2 ^ height) := by
+  let n := m.leafCount
+  let q := n / 2 ^ height
+  have hpowpos : 0 < 2 ^ height := pow_pos height
+  have hmod : n % 2^height = 0 := halign
+  have hnmul : n = 2^height * q := by
+    dsimp [q]
+    have hdm := Nat.div_add_mod n (2 ^ height)
+    omega
+  have hpopn : popcount n = popcount q := by
+    rw [hnmul]
+    rw [popcount_shift q height]
+  have hc : trailingOnes q ≤ m.peaks.length := by
+    rw [h, hpopn]
+    exact trailingOnes_le_popcount q
+  have hmerge := mergeCarry_length_eq hash (trailingOnes q) peak m.peaks
+  change (mergeCarry hash (trailingOnes (m.leafCount / 2 ^ height)) peak m.peaks).length =
+    popcount (m.leafCount + 2 ^ height)
+  rw [hmerge]
+  rw [if_pos hc]
+  have hnext : m.leafCount + 2^height = 2^height * (q+1) := by
+    change n + 2^height = 2^height * (q + 1)
+    rw [hnmul]
+    rw [Nat.mul_add, Nat.mul_one]
+  rw [hnext]
+  rw [popcount_shift (q+1) height]
+  rw [popcount_succ_eq_sub]
+  have hpeq : m.peaks.length = popcount q := by
+    rw [h, hpopn]
+  rw [hpeq]
 
-/-- From the empty accumulator, `n` leaves produce exactly `popcount n`
-peaks. -/
-theorem appendList_peaks_length_empty (α : Type) (hash : α → α → α) (leaves : List α) :
-    (appendList hash (empty α) leaves).peaks.length = popcount leaves.length := by
-  have h := appendList_peaks_length hash (empty α) leaves (by simp [empty, popcount])
-  simpa [empty] using h
+theorem chunk_foldl_add {α : Type} (chunk : Chunk α) (x : Nat) :
+    chunk.foldl (fun acc hp => acc + 2 ^ hp.1) x = x + chunk.foldl (fun acc hp => acc + 2 ^ hp.1) 0 := by
+  induction chunk generalizing x with
+  | nil => simp
+  | cons hp rest ih =>
+      cases hp with
+      | mk h p =>
+        simp only [List.foldl_cons, Nat.zero_add]
+        have hfold : List.foldl (fun acc hp => acc + 2 ^ hp.fst) (2 ^ h) rest =
+            2 ^ h + List.foldl (fun acc hp => acc + 2 ^ hp.fst) 0 rest := by
+          simpa [Nat.add_comm] using (ih (2 ^ h))
+        rw [ih (x + 2 ^ h), hfold]
+        omega
 
-/-- `appendList` is compositional: appending `as ++ bs` in one batch gives
-the same state as appending `as` and then `bs`. -/
-theorem appendList_append {α : Type} (hash : α → α → α) (m : Acc α) (as bs : List α) :
-    appendList hash m (as ++ bs) = appendList hash (appendList hash m as) bs := by
-  simp [appendList, List.foldl_append]
+theorem appendPeaks_leafCount {α : Type} (hash : α → α → α) (m : Acc α) :
+    ∀ chunk : Chunk α,
+      (appendPeaks hash m chunk).leafCount = m.leafCount + chunk.foldl (fun acc hp => acc + 2 ^ hp.1) 0 := by
+  intro chunk
+  induction chunk generalizing m with
+  | nil => simp [appendPeaks]
+  | cons hp rest ih =>
+      cases hp with
+      | mk h peak =>
+        simp [appendPeaks]
+        rw [ih (appendPeak hash h peak m)]
+        rw [appendPeak_leafCount]
+        rw [chunk_foldl_add rest (2 ^ h)]
+        omega
 
-/-- Compositionality also preserves the peak-count invariant. -/
-theorem appendList_peaks_length_append {α : Type} (hash : α → α → α) (m : Acc α) (as bs : List α)
+/-- `appendPeaks` preserves the canonical invariant when every peak is aligned. -/
+theorem appendPeaks_peaks_length {α : Type} (hash : α → α → α) (m : Acc α) (chunk : Chunk α)
+    (hvalid : ValidChunk hash m chunk)
     (h : m.peaks.length = popcount m.leafCount) :
-    (appendList hash m (as ++ bs)).peaks.length =
-      popcount (m.leafCount + (as ++ bs).length) := by
-  rw [appendList_append]
-  have h1 : (appendList hash m as).peaks.length = popcount (m.leafCount + as.length) :=
-    appendList_peaks_length hash m as h
-  have hcanon : (appendList hash m as).peaks.length = popcount (appendList hash m as).leafCount := by
-    rw [appendList_leafCount]
-    exact h1
-  have h2 : (appendList hash (appendList hash m as) bs).peaks.length =
-      popcount ((appendList hash m as).leafCount + bs.length) :=
-    appendList_peaks_length hash (appendList hash m as) bs hcanon
-  rw [h2]
-  rw [appendList_leafCount]
-  have hlen : (as ++ bs).length = as.length + bs.length := by simp
-  rw [hlen]
-  congr 1
-  omega
+    (appendPeaks hash m chunk).peaks.length =
+      popcount (m.leafCount + chunk.foldl (fun acc hp => acc + 2 ^ hp.1) 0) := by
+  induction chunk generalizing m with
+  | nil =>
+      simp [appendPeaks, ValidChunk] at hvalid ⊢
+      exact h
+  | cons hp rest ih =>
+      cases hp with
+      | mk height peak =>
+        have hvalid' : ValidChunk hash (appendPeak hash height peak m) rest := hvalid.2
+        have halign : aligned m height := hvalid.1
+        have hstep : (appendPeak hash height peak m).peaks.length =
+            popcount (m.leafCount + 2 ^ height) :=
+          appendPeak_peaks_length hash m height peak halign h
+        have hrest := ih (appendPeak hash height peak m) hvalid' hstep
+        -- hrest gives the tail length in terms of the intermediate leafCount.
+        simp only [appendPeaks, List.foldl_cons] at *
+        rw [hrest]
+        rw [appendPeak_leafCount]
+        simp [chunk_foldl_add rest (2 ^ height), Nat.add_assoc]
 
 end Acc
 end MMR
