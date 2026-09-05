@@ -71,12 +71,12 @@ def mergeCarry (hash : α → α → α) : Nat → α → List α → List α
   | n + 1, x, p :: peaks => mergeCarry hash n (hash p x) peaks
   | _, x, [] => [x] -- unreachable for valid states; keeps definition total
 
-/-- Append a complete aligned subtree of `2^height` leaves whose root is `peak`.
+/-- Append a complete subtree of `2^height` leaves whose root is `peak`.
 
-This is the primitive MMR right-merge.  Appending a single leaf is the special
-case `height = 0`.  When the input is valid (`aligned m height`), it preserves
-the append-only semantics: the new subtree is placed immediately after the
-current leaves and is right-merged with existing peaks of matching heights.
+This is the primitive MMR right-merge and is deliberately total/permissive:
+it does not check `aligned m height`.  `aligned` is only the condition under
+which the append-only semantic (stable leaf indices and the canonical peak
+count) is preserved.  Appending a single leaf is the special case `height = 0`.
 
 `mergeCarry` is reused with the carry starting at the given `height`: the number
 of existing peaks consumed is the number of trailing 1s in `leafCount / 2^height`.
@@ -89,14 +89,15 @@ def appendPeak (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α)
 def append (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α :=
   appendPeak hash 0 leaf m
 
-/-- Fold a list of aligned peaks into an accumulator in order.  Each peak is a
-complete subtree of `2^height` leaves, so this is more general than appending
-a list of individual leaves. -/
+/-- Fold a chunk into an accumulator in order.  Like `appendPeak`, this function
+is permissive and does not enforce `ValidChunk`; callers wanting append-only
+semantics should provide a `ValidChunk`. -/
 def appendPeaks (hash : α → α → α) (m : Acc α) (chunk : Chunk α) : Acc α :=
   chunk.foldl (fun acc hp => appendPeak hash hp.1 hp.2 acc) m
 
-/-- A chunk is valid for append-only semantics when every element is aligned at
-the moment it is pushed. -/
+/-- A chunk satisfies the aligned condition when every element is aligned at the
+moment it is pushed.  This is the precondition for preserving append-only
+semantics; it is not enforced by `appendPeaks`. -/
 def ValidChunk (hash : α → α → α) (m : Acc α) : Chunk α → Prop
   | [] => True
   | (height, peak) :: rest =>
