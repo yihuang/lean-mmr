@@ -60,7 +60,6 @@ exceed the smallest existing peak height; the empty MMR accepts every height. -/
 def aligned (m : Acc α) (height : Nat) : Prop :=
   m.leafCount % 2 ^ height = 0
 
-set_option linter.unusedVariables false in
 /-- Carry-merge:
   `mergeCarry hash c x peaks` takes the new leaf `x` and merges it with the
   first `c` entries of `peaks` (the rightmost peaks).  The first merge is
@@ -70,7 +69,7 @@ set_option linter.unusedVariables false in
 def mergeCarry (hash : α → α → α) : Nat → α → List α → List α
   | 0, x, peaks => x :: peaks
   | n + 1, x, p :: peaks => mergeCarry hash n (hash p x) peaks
-  | _c + 1, x, [] => [x] -- unreachable for valid states; keeps definition total
+  | _, x, [] => [x] -- unreachable for valid states; keeps definition total
 
 /-- Append a complete aligned subtree of `2^height` leaves whose root is `peak`.
 
