@@ -14,21 +14,49 @@ properties are independent of the concrete hash.
 
 ## Structure and operations
 
-The core data structure is defined in `MMR/Basic.lean`:
+The implementation is intentionally small; the core code is:
 
 ```lean
+namespace MMR
+
+universe u
+
 structure Acc (α : Type u) where
   peaks : List α   -- smallest height (newest/rightmost) first
   leafCount : Nat
-```
 
-The main operations are:
+namespace Acc
 
-```lean
-empty       (α : Type u) : Acc α
-appendPeak  (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α) : Acc α
-appendPeaks (hash : α → α → α) (m : Acc α) : Chunk α → Acc α
-append      (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α
+def empty (α : Type u) : Acc α := ⟨[], 0⟩
+
+abbrev Chunk (α : Type u) := List (Nat × α)
+
+def aligned (m : Acc α) (height : Nat) : Prop :=
+  m.leafCount % 2 ^ height = 0
+
+def mergeCarry (hash : α → α → α) : Nat → α → List α → List α
+  | 0, x, peaks => x :: peaks
+  | n + 1, x, p :: peaks => mergeCarry hash n (hash p x) peaks
+  | _c + 1, x, [] => [x]
+
+def appendPeak (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α) : Acc α :=
+  { peaks := mergeCarry hash (trailingOnes (m.leafCount / 2 ^ height)) peak m.peaks,
+    leafCount := m.leafCount + 2 ^ height }
+
+def append (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α :=
+  appendPeak hash 0 leaf m
+
+def appendPeaks (hash : α → α → α) (m : Acc α) : Chunk α → Acc α
+  | [] => m
+  | (height, peak) :: rest => appendPeaks hash (appendPeak hash height peak m) rest
+
+def ValidChunk (hash : α → α → α) (m : Acc α) : Chunk α → Prop
+  | [] => True
+  | (height, peak) :: rest =>
+    aligned m height ∧ ValidChunk hash (appendPeak hash height peak m) rest
+
+end Acc
+end MMR
 ```
 
 Key points:
@@ -38,13 +66,7 @@ Key points:
   stable leaf indices.
 - Single-leaf `append` is just `appendPeak height 0`.
 - `appendPeaks` folds `appendPeak` over an ordered chunk.
-
-Appending uses two auxiliary definitions:
-
-- `trailingOnes n` — how many equal-height rightmost peaks must be merged
-  when appending the leaf at index `n`;
-- `mergeCarry hash c leaf peaks` — the carry-merge loop that consumes `c`
-  rightmost peaks and produces the new peak list.
+- `ValidChunk` is the aligned-condition predicate used in the proof.
 
 Only `peaks` and `leafCount` are consulted or updated; no full tree storage is
 needed.
