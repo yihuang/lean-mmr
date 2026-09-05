@@ -57,7 +57,10 @@ def Valid (m : Acc α) : Prop :=
 
 /-- A height is aligned with a leaf count when it is a multiple of the subtree
 size `2^height`.  Equivalently, `height` does not exceed the smallest existing
-peak height; the empty MMR accepts every height. -/
+peak height; the empty MMR accepts every height.  This equivalence is proved
+in `MMR/AppendOnly.lean` (`alignedAt_iff_le_trailingZeros`), which also shows
+that `aligned` is exactly the condition under which appends preserve the
+append-only semantics. -/
 abbrev alignedAt (leafCount : Nat) (height : Nat) : Prop :=
   leafCount % 2 ^ height = 0
 
@@ -103,9 +106,11 @@ def mergeCarry : Nat → α → List α → List α
 
 This is the primitive MMR right-merge and is deliberately total/permissive:
 it does not check `aligned m height`.  The canonical peak-count invariant is
-preserved for every height; `aligned` is only needed for the stronger
-append-only structural semantics (stable leaf indices).  Appending a single
-leaf is the special case `height = 0`.
+preserved for every height; `aligned` is exactly the additional condition
+under which the append is the canonical, append-only MMR extension with
+stable leaf indices — see `MMR/AppendOnly.lean` (`appendPeak_spec`,
+`unaligned_appendPeak_not_spec`).  Appending a single leaf is the special
+case `height = 0` (always aligned).
 
 `mergeCarry` is reused with the carry starting at the given `height`: the number
 of existing peaks consumed is the number of trailing 1s in `leafCount / 2^height`.

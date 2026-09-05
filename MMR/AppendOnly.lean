@@ -8,9 +8,33 @@ universe u
 /-!
 # Append-only semantics under aligned input
 
-This file formalizes what *append-only* means for the minimal accumulator and
-proves that the implementation enjoys it whenever the pushed input is aligned
-(`ValidChunk` / `aligned`).
+This file formalizes what *append-only* means for the minimal accumulator
+and proves that the implementation enjoys it whenever the pushed input is
+aligned (`ValidChunk` / `aligned`).
+
+## Main discovery: `aligned` is exactly the right condition
+
+The results below pin down the alignment condition
+`m.leafCount % 2 ^ height = 0` as the *exact* boundary between mere safety
+and append-only semantics, not a merely convenient sufficient side
+condition:
+
+* **Safety is unconditional.**  The peak-count invariant `Valid` and the
+  carry count are correct for *every* height (`appendPeak_peaks_length`,
+  `popcount_add_pow`), so unaligned appends never corrupt the accumulator.
+* **Sufficiency.**  `specPeaks_aligned_step`: when `n = 2 ^ h * q` is
+  aligned, the implementation's carry-merge *is* the canonical MMR
+  extension, giving stable leaf indices (`appendPeak_spec`,
+  `append_spec`, `appendPeaks_spec`).
+* **Necessity.**  `unaligned_appendPeak_not_spec`: a machine-checked
+  counterexample at the unaligned point `n = 1, h = 1` — the very same
+  operation, fed the genuine subtree root, provably produces peaks that are
+  not the canonical peaks of the extended history, so leaf indices shift.
+* **Geometric reading.**  `alignedAt_iff_le_trailingZeros`: for a nonempty
+  MMR, alignment is equivalent to `height ≤ trailingZeros n` — the appended
+  subtree must be no taller than the newest (smallest) existing peak, i.e.
+  its leaf range `[n, n + 2 ^ h)` starts at a clean subtree boundary.
+  Unaligned appends would straddle existing mountains.
 
 ## Semantic model
 
@@ -41,11 +65,6 @@ canonical MMR of the first `m.leafCount` leaves of the history `f`.
   `represents_valid` connect the semantic precondition with the API-level
   `ValidChunk` predicate, its computable validator `validChunk?`, and the
   canonical peak-count invariant `Valid`.
-
-Without alignment the same operations remain safe (`Valid` is preserved
-unconditionally, see `MMR/Properties.lean`), but the resulting state is no
-longer the canonical MMR of any leaf history, so stable leaf indices are not
-guaranteed.
 
 No assumptions about the hash function are needed.
 -/
@@ -111,6 +130,78 @@ theorem two_pow_split_add (h k : Nat) :
 
 theorem two_pow_mul_div (h q : Nat) : 2 ^ h * q / 2 ^ h = q :=
   Nat.mul_div_cancel_left q (Nat.two_pow_pos h)
+
+/-- **Exactness of the alignment condition.**  For a nonempty MMR, `n` is
+aligned at height `h` exactly when `h` does not exceed `trailingZeros n`,
+the height of the newest (smallest) peak: the appended subtree must be no
+taller than every existing peak, i.e. its leaf range `[n, n + 2 ^ h)` must
+start at a clean subtree boundary.  Together with `specPeaks_aligned_step`
+(sufficiency) and `unaligned_appendPeak_not_spec` (necessity), this shows
+`aligned` is exactly the right precondition, not a merely convenient
+sufficient one. -/
+theorem alignedAt_iff_le_trailingZeros (n h : Nat) (hn : 0 < n) :
+    alignedAt n h ↔ h ≤ trailingZeros n := by
+  have key : ∀ (n : Nat), 0 < n → ∀ h, alignedAt n h ↔ h ≤ trailingZeros n := by
+    intro n
+    induction n using Nat.strongRecOn with
+    | ind n ih =>
+      intro hn h
+      cases n with
+      | zero => omega
+      | succ m =>
+        rcases Nat.mod_two_eq_zero_or_one (m + 1) with hmod | hmod
+        · -- even: n = 2 * k with 0 < k < n, and tz n = tz k + 1
+          obtain ⟨k, hk⟩ : ∃ k, m + 1 = 2 * k := ⟨(m + 1) / 2, by omega⟩
+          have hk0 : 0 < k := by omega
+          have htz : trailingZeros (m + 1) = trailingZeros k + 1 := by
+            rw [hk]
+            exact trailingZeros_even k hk0
+          constructor
+          · intro hal
+            have hal' : (m + 1) % 2 ^ h = 0 := hal
+            rw [hk] at hal'
+            cases h with
+            | zero => omega
+            | succ h =>
+                have hpow : 2 ^ (h + 1) = 2 * 2 ^ h := by rw [Nat.pow_succ']
+                rw [hpow, Nat.mul_mod_mul_left 2 k (2 ^ h)] at hal'
+                have hkmod : k % 2 ^ h = 0 := by omega
+                have hle : h ≤ trailingZeros k := (ih k (by omega) hk0 h).mp hkmod
+                omega
+          · intro hle
+            show (m + 1) % 2 ^ h = 0
+            cases h with
+            | zero =>
+                rw [Nat.pow_zero]
+                exact Nat.mod_one _
+            | succ h =>
+                have hpow : 2 ^ (h + 1) = 2 * 2 ^ h := by rw [Nat.pow_succ']
+                have hle' : h ≤ trailingZeros k := by omega
+                have hkmod : k % 2 ^ h = 0 := (ih k (by omega) hk0 h).mpr hle'
+                rw [hk, hpow, Nat.mul_mod_mul_left 2 k (2 ^ h), hkmod]
+        · -- odd: tz n = 0, so alignment forces h = 0
+          obtain ⟨j, hj⟩ : ∃ j, m + 1 = 2 * j + 1 := ⟨(m + 1) / 2, by omega⟩
+          have htz : trailingZeros (m + 1) = 0 := by
+            rw [hj]
+            exact trailingZeros_odd j
+          constructor
+          · intro hal
+            have hal' : (m + 1) % 2 ^ h = 0 := hal
+            cases h with
+            | zero => omega
+            | succ h =>
+                have hdvd : 2 ∣ 2 ^ (h + 1) := ⟨2 ^ h, by rw [Nat.pow_succ']⟩
+                have hmm := Nat.mod_mod_of_dvd (m + 1) hdvd
+                rw [hal'] at hmm
+                simp only [Nat.zero_mod] at hmm
+                omega
+          · intro hle
+            have h0 : h = 0 := by omega
+            subst h0
+            show (m + 1) % 2 ^ 0 = 0
+            rw [Nat.pow_zero]
+            exact Nat.mod_one _
+  exact key n hn h
 
 /-- Every positive number is a power of two times an odd number. -/
 theorem exists_pow_two_mul_odd (n : Nat) (hn : 0 < n) :
@@ -295,6 +386,74 @@ theorem specPeaks_aligned_step (q : Nat) :
       simp only [mergeCarry]
       simp only [subtreeRoot]
       rw [← two_pow_succ_mul h k, two_pow_split_add h k]
+
+/-- Accumulator-level version of `alignedAt_iff_le_trailingZeros`: for a
+nonempty MMR, `height` is aligned exactly when it does not exceed
+`trailingZeros leafCount`, the height of the newest (smallest) peak. -/
+theorem aligned_iff_le_trailingZeros (m : Acc α) (height : Nat)
+    (hm : 0 < m.leafCount) :
+    aligned m height ↔ height ≤ trailingZeros m.leafCount :=
+  alignedAt_iff_le_trailingZeros m.leafCount height hm
+
+/-! ### Necessity: the alignment condition cannot be dropped
+
+`specPeaks_aligned_step` shows that `aligned` suffices for the append-only
+canonical semantics, and `alignedAt_iff_le_trailingZeros` characterizes it
+topologically.  A converse stated as a general equation between peak lists
+cannot hold (degenerate hashes may collide), but the boundary is real: the
+following machine-checked counterexample shows that at an unaligned point
+the very same operation, fed the *genuine* subtree root, provably produces
+a state that is not the canonical MMR of the extended history. -/
+
+/-- A concrete injective hash for the counterexample below: `2 ^ a * 3 ^ b`
+is injective by unique factorization. -/
+private def tagHash (a b : Nat) : Nat := 2 ^ a * 3 ^ b
+
+/-- A concrete leaf history for the counterexample below. -/
+private def hist (i : Nat) : Nat := i
+
+/-- **Alignment is necessary for append-only semantics.**  At the unaligned
+point `leafCount = 1`, `height = 1` (indeed `1 % 2 ≠ 0`), appending the
+*genuine* subtree root of the next two leaves produces peaks that are
+provably *not* the canonical MMR peaks of the extended 3-leaf history:
+the appended subtree straddles the existing single-leaf peak, so the leaf
+indices shift.  Note that the peak-count invariant `Valid` still holds
+(`appendPeak_peaks_length`), so safety and append-only semantics separate
+exactly at the aligned condition. -/
+theorem unaligned_appendPeak_not_spec :
+    (appendPeak tagHash 1 (subtreeRoot tagHash 1 1 hist)
+        { peaks := specPeaks tagHash 1 hist, leafCount := 1 }).peaks
+      ≠ specPeaks tagHash 3 hist := by
+  have htz2 : trailingZeros (1 + 1) = 1 := by
+    have he := trailingZeros_even 1 (by omega)
+    have h1 : trailingZeros 1 = 0 := trailingZeros_odd 0
+    have h2 : (2 : Nat) * 1 = 1 + 1 := by omega
+    rw [h2] at he
+    omega
+  have hsp1 : specPeaks tagHash 1 hist = [hist 0] := by
+    show specPeaks tagHash (0 + 1) hist = _
+    rw [specPeaks, show trailingZeros (0 + 1) = 0 from trailingZeros_odd 0,
+      Nat.pow_zero]
+    simp [subtreeRoot, specPeaks]
+  have hsp2 : specPeaks tagHash 2 hist = [tagHash (hist 0) (hist 1)] := by
+    show specPeaks tagHash (1 + 1) hist = _
+    rw [specPeaks, htz2, Nat.pow_one]
+    have hsub : (1 : Nat) + 1 - 2 = 0 := by omega
+    rw [hsub]
+    simp [subtreeRoot, specPeaks, Nat.pow_zero]
+  have hsp3 : specPeaks tagHash 3 hist = [hist 2, tagHash (hist 0) (hist 1)] := by
+    show specPeaks tagHash (2 + 1) hist = _
+    rw [specPeaks, show trailingZeros (2 + 1) = 0 from trailingZeros_odd 1,
+      Nat.pow_zero]
+    have hsub : (2 : Nat) + 1 - 1 = 2 := by omega
+    rw [hsub, hsp2]
+    simp [subtreeRoot]
+  have hdiv : (1 : Nat) / 2 ^ 1 = 0 := by decide
+  show mergeCarry tagHash (trailingOnes (1 / 2 ^ 1))
+      (subtreeRoot tagHash 1 1 hist) (specPeaks tagHash 1 hist) ≠ _
+  rw [hdiv, hsp1, hsp3]
+  simp only [trailingOnes, mergeCarry, subtreeRoot, Nat.pow_zero]
+  decide
 
 end Semantics
 

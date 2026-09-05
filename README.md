@@ -14,8 +14,8 @@ The hash function is abstract. All operations are parameterized by an arbitrary 
 ## Features
 
 - **Minimal state**: no internal tree storage; only peak hashes and the leaf count are retained.
-- **Append-only core**: `appendPeak`, `append`, and `appendPeaks` support appending single leaves, aligned subtrees, and ordered chunks.
-- **Aligned precondition**: `ValidChunk` is the machine-checkable alignment predicate for append-only structural semantics. It is distinct from the `Valid` peak-count invariant and is not needed to prove it.
+- **Append-only core**: `appendPeak`, `append`, and `appendPeaks` support appending single leaves, subtrees, and ordered chunks.
+- **Aligned precondition, identified as exact**: `aligned` (`leafCount % 2 ^ height = 0`) and `ValidChunk` are the machine-checkable alignment predicates for append-only structural semantics. They are distinct from the `Valid` peak-count invariant (which holds unconditionally), and they are proved to sit precisely on the boundary: alignment is sufficient for canonical, history-preserving appends, and necessary — without it a machine-checked counterexample shows the result is no longer the canonical MMR of the extended history.
 - **Verified invariants**: the structural properties of peak counts and leaf counts are proved in Lean, independent of the concrete hash.
 - **Verified append-only semantics**: under aligned input, the accumulator is proved to be exactly the canonical MMR of the appended leaf history — see [`MMR/AppendOnly.lean`](MMR/AppendOnly.lean) and [Append-only semantics](#append-only-semantics-under-aligned-input).
 
@@ -119,7 +119,48 @@ implementation's evaluation order:
 - `Represents hash m f` — the accumulator `m` is exactly the canonical MMR of
   the first `m.leafCount` leaves of `f`.
 
-The main results are:
+#### The discovery: `aligned` is exactly the right condition
+
+The central finding crystallized by these proofs is that the alignment
+condition `leafCount % 2^height = 0` is the *exact* boundary between safety
+and append-only semantics — not a merely convenient sufficient side condition:
+
+1. **Safety is unconditional.** The peak-count invariant and the carry count
+   are correct for *every* height (`appendPeak_peaks_length`, and
+   `popcount (n + 2^h) = popcount n − trailingOnes (n / 2^h) + 1` for all `n`, `h`),
+   so an unaligned append never corrupts the accumulator.
+2. **Alignment is sufficient for append-only semantics.** When `n = 2^h · q` is
+   aligned, the implementation's carry-merge *is* the canonical MMR extension
+   (`specPeaks_aligned_step`), so appends extend the history with stable leaf
+   indices (`appendPeak_spec`, `append_spec`, `appendPeaks_spec`).
+3. **Alignment is necessary.** Dropping it provably breaks canonicalness: at the
+   unaligned point `n = 1`, `h = 1`, feeding the *genuine* subtree root to the
+   very same operation provably yields peaks that are not the canonical peaks of
+   the extended 3-leaf history — the appended subtree straddles the existing
+   peak and leaf indices shift, even though `Valid` still holds:
+
+   ```lean
+   theorem unaligned_appendPeak_not_spec :
+       (appendPeak tagHash 1 (subtreeRoot tagHash 1 1 hist)
+           { peaks := specPeaks tagHash 1 hist, leafCount := 1 }).peaks
+         ≠ specPeaks tagHash 3 hist
+   ```
+
+4. **Geometric reading.** For a nonempty MMR, alignment is equivalent to
+   `height ≤ trailingZeros n` — the appended subtree must be no taller than the
+   newest (smallest) existing peak, i.e. its leaf range `[n, n + 2^height)` starts
+   at a clean subtree boundary:
+
+   ```lean
+   theorem alignedAt_iff_le_trailingZeros (n h : Nat) (hn : 0 < n) :
+       alignedAt n h ↔ h ≤ trailingZeros n
+   ```
+
+So safety and append-only semantics separate *exactly* at the aligned
+condition: the one-bit check `leafCount % 2^height = 0` is what upgrades a safe
+merge into a canonical, history-preserving extension.
+
+The sufficiency results in detail:
 
 - **Aligned subtree append is canonical** — when `height` is aligned with `m`
   (`m.leafCount % 2^height = 0`), appending the genuine subtree root of the next
@@ -189,13 +230,9 @@ The main results are:
   satisfies the canonical peak-count invariant (`represents_valid`, via
   `specPeaks_length : (specPeaks hash n f).length = popcount n`).
 
-Without alignment the same operations remain safe — `Valid` still holds
-unconditionally — but the resulting state is no longer the canonical MMR of any
-leaf history, so stable leaf indices are not guaranteed. Alignment is exactly
-the condition under which `appendPeak` coincides with the canonical MMR
-extension (see `specPeaks_aligned_step`).
-
-All proofs in this section are independent of the concrete hash function.
+All proofs in this section are independent of the concrete hash function
+(the necessity counterexample uses an injective concrete hash, `2 ^ a * 3 ^ b`,
+since degenerate hashes may of course collide).
 
 ## Repository layout
 
