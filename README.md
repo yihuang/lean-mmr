@@ -1,20 +1,26 @@
-# MMR in Lean 4
+# Merkle Mountain Range in Lean 4
 
-A minimal Merkle Mountain Range (MMR) accumulator implemented in Lean 4.
+A formally verified, minimal [Merkle Mountain Range (MMR)](https://docs.grin.mw/wiki/chain-state/merkle-mountain-range/) accumulator implemented in [Lean 4](https://lean-lang.org/).
 
-The implementation stores only:
+## Overview
 
-- `peaks : List α` — peak hashes, smallest height (newest/rightmost) first, and
-- `leafCount : Nat` — number of leaves appended so far.
+The accumulator stores only two pieces of state:
 
-The hash algorithm is kept abstract: `append` is parameterized by an arbitrary
-binary function `hash : α → α → α`.  For a real MMR this would be a hash of
-the two children (with domain separation if desired), but all structural
-properties are independent of the concrete hash.
+- `peaks : List α` — peak hashes, ordered by increasing height (newest/rightmost first), and
+- `leafCount : Nat` — the number of leaves appended so far.
 
-## Structure and operations
+The hash function is abstract. All operations are parameterized by an arbitrary binary function `hash : α → α → α`, so the implementation and its structural proofs do not depend on a particular cryptographic hash. In a real deployment, `hash` would be a domain-separated hash of two child hashes.
 
-Interfaces:
+## Features
+
+- **Minimal state**: no internal tree storage; only peak hashes and the leaf count are retained.
+- **Append-only core**: `appendPeak`, `append`, and `appendPeaks` support appending single leaves, aligned subtrees, and ordered chunks.
+- **Aligned precondition**: `ValidChunk` is the machine-checkable alignment predicate that guarantees canonical MMR behavior when appending peaks.
+- **Verified invariants**: the structural properties of peak counts and leaf counts are proved in Lean, independent of the concrete hash.
+
+## Design
+
+The main data structure and top-level API are defined in `MMR/Basic.lean`.
 
 ```lean
 namespace MMR
@@ -27,122 +33,106 @@ structure Acc (α : Type u) where
 
 namespace Acc
 
-def empty (α : Type u) : Acc α := ⟨[], 0⟩
-
-abbrev Chunk (α : Type u) := List (Nat × α)
-
-def alignedAt (leafCount : Nat) (height : Nat) : Prop
-
-def aligned (m : Acc α) (height : Nat) : Prop
-
-def alignedAt? (leafCount : Nat) (height : Nat) : Bool
-
-def aligned? (m : Acc α) (height : Nat) : Bool
-
-def validChunk? (leafCount : Nat) : Chunk α → Bool
-
-def mergeCarry (hash : α → α → α) : Nat → α → List α → List α
-
+def Valid (m : Acc α) : Prop
 def appendPeak (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α) : Acc α
-
 def append (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α :=
   appendPeak hash 0 leaf m
-
-def appendPeaks (hash : α → α → α) (m : Acc α) (chunk : Chunk α) : Acc α :=
-  chunk.foldl (fun acc hp => appendPeak hash hp.1 hp.2 acc) m
-
-def ValidChunk (hash : α → α → α) (m : Acc α) : Chunk α → Prop
+def appendPeaks (hash : α → α → α) (m : Acc α) (chunk : Chunk α) : Acc α
+def ValidChunk (hash : α → α → α) (m : Acc α) (chunk : Chunk α) : Prop
 
 end Acc
 end MMR
 ```
 
-Only `append` and `appendPeaks` are inlined above; the other operations are
-interfaces whose full definitions live in `MMR/Basic.lean`.
-
 Key points:
 
-- `appendPeak` is the core primitive: it appends a complete subtree with
-  `2^height` leaves, right-merging it into existing peaks.  Stable leaf
-  indices are only preserved when the input is aligned.
-- Single-leaf `append` is just `appendPeak height 0`.
+- `appendPeak` appends a complete subtree with `2^height` leaves and right-merges it into the existing peaks.
+- `append` is `appendPeak` at height `0`, as shown in the one-liner above.
 - `appendPeaks` folds `appendPeak` over an ordered chunk.
-- `ValidChunk` is the aligned-condition predicate used in the proof.
+- `Valid` is the canonical peak-count invariant: `m.Valid` means `m.peaks.length = popcount m.leafCount`.
+- `ValidChunk` is the alignment predicate used in the proofs.
 
-Only `peaks` and `leafCount` are consulted or updated; no full tree storage is
-needed.
+Although internal nodes are not stored, a canonical root can be computed on demand from the minimal state by “bagging the peaks”: fold the peaks from right to left with `hash`, optionally including `leafCount` as a domain-separation prefix. This needs only the already-available `peaks` and `leafCount`, so no full tree is required to derive a root.
 
-Although the accumulator does not store internal nodes, a single root can
-still be computed on the fly from the minimal state by *bagging the peaks*:
-fold the peaks from right to left with `hash`, optionally including
-`leafCount` as a domain-separation prefix in the outer hash. This needs only
-the already-available `peaks` and `leafCount`, so the root can be derived
-whenever a verifier needs it without keeping the full tree around.
+## Verified properties
 
-## Proved main theorems
+`MMR/Properties.lean` contains machine-checked proofs of the accumulator’s central structural invariants:
 
-The machine-checked properties in `MMR/Properties.lean` include:
-
-- Peak-count invariant:
+- **The empty accumulator satisfies the canonical invariant.**
 
   ```lean
-  theorem append_peaks_length {α : Type} (hash : α → α → α) (m : Acc α) (leaf : α)
-      (h : m.peaks.length = popcount m.leafCount) :
-      (append hash m leaf).peaks.length = popcount (m.leafCount + 1)
+  theorem empty_valid (α : Type u) : (empty α).Valid
   ```
 
-- `appendPeak` preserves the canonical invariant when the peak is aligned:
+- **Single-leaf append preserves the canonical invariant.**
 
   ```lean
-  theorem appendPeak_peaks_length {α : Type} (hash : α → α → α) (m : Acc α) (height : Nat) (peak : α)
+  theorem append_peaks_length {α : Type u} (hash : α → α → α) (m : Acc α) (leaf : α)
+      (h : m.Valid) :
+      (append hash m leaf).Valid
+  ```
+
+- **Aligned subtree append preserves the canonical invariant.**
+
+  ```lean
+  theorem appendPeak_peaks_length {α : Type u} (hash : α → α → α) (m : Acc α) (height : Nat) (peak : α)
       (halign : aligned m height)
-      (h : m.peaks.length = popcount m.leafCount) :
-      (appendPeak hash height peak m).peaks.length = popcount (m.leafCount + 2 ^ height)
+      (h : m.Valid) :
+      (appendPeak hash height peak m).Valid
   ```
 
-- `appendPeaks` preserves append-only semantics under the aligned condition:
+- **Valid chunks preserve the canonical invariant when appended in order.**
 
   ```lean
-  theorem appendPeaks_peaks_length {α : Type} (hash : α → α → α) (m : Acc α) (chunk : Chunk α)
+  theorem appendPeaks_peaks_length {α : Type u} (hash : α → α → α) (m : Acc α) (chunk : Chunk α)
       (hvalid : ValidChunk hash m chunk)
-      (h : m.peaks.length = popcount m.leafCount) :
-      (appendPeaks hash m chunk).peaks.length =
-        popcount (m.leafCount + chunk.foldl (fun acc hp => acc + 2 ^ hp.1) 0)
+      (h : m.Valid) :
+      (appendPeaks hash m chunk).Valid
   ```
 
-- The one-step binary carry relation used by the merge loop:
+- **The leaf count tracks the number of appended leaves exactly.**
 
   ```lean
-  theorem popcount_succ_eq_sub (n : Nat) :
-      popcount (n + 1) = popcount n - trailingOnes n + 1
+  theorem appendPeaks_leafCount {α : Type u} (hash : α → α → α) (m : Acc α) (chunk : Chunk α) :
+      (appendPeaks hash m chunk).leafCount =
+        m.leafCount + chunk.foldl (fun acc hp => acc + 2 ^ hp.1) 0
   ```
 
-- The merge loop removes `c` peaks and inserts one:
-
-  ```lean
-  theorem mergeCarry_length_eq {α : Type} (hash : α → α → α) (c : Nat) (x : α) (peaks : List α) :
-      (mergeCarry hash c x peaks).length = if c ≤ peaks.length then peaks.length - c + 1 else 1
-  ```
-
-- `leafCount` always equals the number of leaves added by a chunk:
-
-  ```lean
-  theorem appendPeaks_leafCount {α : Type} (hash : α → α → α) (m : Acc α) :
-      ∀ chunk : Chunk α,
-        (appendPeaks hash m chunk).leafCount =
-          m.leafCount + chunk.foldl (fun acc hp => acc + 2 ^ hp.1) 0
-  ```
+- **Supporting binary-carry lemmas**, including the one-step peak-count recurrence and the length behavior of `mergeCarry`.
 
 All proofs are independent of the concrete hash function.
 
-## References
+## Repository layout
 
-- [Merkle Mountain Ranges - Grin Documentation](https://docs.grin.mw/wiki/chain-state/merkle-mountain-range/) — a general introduction to the MMR accumulator, its append/merge behavior, peaks, and bagging.
-- [Minimizing Storage Using Merkle Mountain Ranges - Neptune](https://neptune.cash/articles/mmr) — describes storing only peaks and leaf count as a minimal MMR accumulator.
+```text
+MMR/
+  Basic.lean       Data structures and MMR operations
+  Properties.lean  Formal proofs of the structural invariants
+Main.lean          Executable entry point
+lakefile.toml      Lake project configuration
+lean-toolchain     Pinned Lean toolchain
+```
+
+## Requirements
+
+- [Lean 4](https://lean-lang.org/) (the toolchain is pinned in `lean-toolchain`)
+- [Lake](https://github.com/leanprover/lake) (included with Lean)
 
 ## Build
 
 ```sh
 lake build
-lake env lean Examples.lean   # or import MMR in your own Lean file
 ```
+
+To run the entry point:
+
+```sh
+lake env lean --run Main.lean
+```
+
+To use the library in another Lean project, import `MMR`.
+
+## References
+
+- [Merkle Mountain Ranges — Grin Documentation](https://docs.grin.mw/wiki/chain-state/merkle-mountain-range/) — a general introduction to the MMR accumulator, its append/merge behavior, peaks, and bagging.
+- [Minimizing Storage Using Merkle Mountain Ranges — Neptune](https://neptune.cash/articles/mmr) — describes storing only peaks and leaf count as a minimal MMR accumulator.

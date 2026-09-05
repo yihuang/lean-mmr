@@ -50,6 +50,11 @@ decreasing_by
   simp_wf
   exact Nat.div_lt_self (Nat.succ_pos n) (by decide)
 
+/-- The canonical peak-count invariant: an accumulator with `leafCount` leaves
+has exactly `popcount leafCount` peaks. -/
+def Valid (m : Acc α) : Prop :=
+  m.peaks.length = popcount m.leafCount
+
 /-- An aligned chunk: each `(height, peak)` is a complete subtree with
 `2^height` leaves, right-appended in list order. -/
 abbrev Chunk (α : Type u) := List (Nat × α)
