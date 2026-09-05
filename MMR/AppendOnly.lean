@@ -52,7 +52,8 @@ canonical MMR of the first `m.leafCount` leaves of the history `f`.
 
 ## Append-only guarantees
 
-* `appendPeak_spec`, `append_spec`, `appendPeaks_spec`: under the aligned
+* `appendSubtree_spec` (the capstone; expanded form `appendPeak_spec`),
+  `append_spec`, `appendPeaks_spec`: under the aligned
   precondition (and, for chunks, genuine subtree roots), appending produces
   the canonical MMR of the *extended* history.  Leaf indices are stable: the
   state after `n` leaves is the canonical MMR of the first `n` leaves, which
@@ -504,6 +505,17 @@ theorem appendPeak_spec (height : Nat) {m : Acc α} {f : Nat → α}
     = specPeaks hash (m.leafCount + 2 ^ height) f
   rw [hrep, ← hdm, two_pow_mul_div height (m.leafCount / 2 ^ height), hnext]
   exact (specPeaks_aligned_step hash (m.leafCount / 2 ^ height) height f).symm
+
+/-- **The capstone, clean form**: appending the genuine subtree of the next
+`2 ^ height` leaves of the represented history (`appendSubtree`) extends that
+history — `appendPeak_spec` in one line. -/
+def appendSubtree (height : Nat) (m : Acc α) (f : Nat → α) : Acc α :=
+  appendPeak hash height (subtreeRoot hash m.leafCount height f) m
+
+theorem appendSubtree_spec (height : Nat) {m : Acc α} {f : Nat → α}
+    (hrep : Represents hash m f) (halign : aligned m height) :
+    Represents hash (appendSubtree hash height m f) f :=
+  appendPeak_spec hash height hrep halign
 
 /-- **Single-leaf append is canonical** (height `0` is always aligned):
 appending `f m.leafCount` extends the represented history by one leaf. -/

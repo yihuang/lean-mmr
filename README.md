@@ -135,13 +135,18 @@ merge into a canonical, history-preserving extension.
 The sufficiency results in detail:
 
 - **Aligned subtree append is canonical** — when `height` is aligned with `m`
-  (`m.leafCount % 2^height = 0`), appending the genuine subtree root of the next
-  `2^height` leaves extends the represented history:
+  (`m.leafCount % 2^height = 0`), appending the genuine subtree of the next
+  `2^height` leaves (`appendSubtree`) extends the represented history. This is
+  the capstone; `appendPeak_spec` is the same statement with `appendSubtree`
+  expanded:
 
   ```lean
-  theorem appendPeak_spec (hash : α → α → α) (height : Nat) {m : Acc α} {f : Nat → α}
+  def appendSubtree (hash : α → α → α) (height : Nat) (m : Acc α) (f : Nat → α) : Acc α :=
+    appendPeak hash height (subtreeRoot hash m.leafCount height f) m
+
+  theorem appendSubtree_spec (height : Nat) {m : Acc α} {f : Nat → α}
       (hrep : Represents hash m f) (halign : aligned m height) :
-      Represents hash (appendPeak hash height (subtreeRoot hash m.leafCount height f) m) f
+      Represents hash (appendSubtree hash height m f) f
   ```
 
 - **Single-leaf append is canonical** (height `0` is always aligned):
