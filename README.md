@@ -56,8 +56,8 @@ interfaces whose full definitions live in `MMR/Basic.lean`.
 Key points:
 
 - `appendPeak` is the core primitive: it appends a complete subtree with
-  `2^height` leaves, right-merging it into existing peaks while preserving
-  stable leaf indices.
+  `2^height` leaves, right-merging it into existing peaks.  Stable leaf
+  indices are only preserved when the input is aligned.
 - Single-leaf `append` is just `appendPeak height 0`.
 - `appendPeaks` folds `appendPeak` over an ordered chunk.
 - `ValidChunk` is the aligned-condition predicate used in the proof.
