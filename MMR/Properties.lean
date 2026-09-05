@@ -19,8 +19,8 @@ accumulator:
    invariant.
 3. `leafCount` is always the number of leaves appended so far.
 4. `ValidChunk` is provided as the API-level precondition for aligned,
-   append-only structural semantics. Formalizing preservation of those
-   semantics is not part of this file.
+   append-only structural semantics; those semantics are formalized and proved
+   in `MMR/AppendOnly.lean`, not in this file.
 
 No assumptions about the hash function are needed.
 
