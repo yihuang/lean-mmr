@@ -31,8 +31,11 @@ def empty (α : Type u) : Acc α := ⟨[], 0⟩
 
 abbrev Chunk (α : Type u) := List (Nat × α)
 
-def aligned (m : Acc α) (height : Nat) : Prop :=
-  m.leafCount % 2 ^ height = 0
+def alignedAt (leafCount : Nat) (height : Nat) : Prop
+
+def aligned (m : Acc α) (height : Nat) : Prop
+
+def alignedAt? (leafCount : Nat) (height : Nat) : Bool
 
 def aligned? (m : Acc α) (height : Nat) : Bool
 

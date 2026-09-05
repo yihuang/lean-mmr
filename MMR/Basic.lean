@@ -54,15 +54,23 @@ decreasing_by
 `2^height` leaves, right-appended in list order. -/
 abbrev Chunk (α : Type u) := List (Nat × α)
 
-/-- A height is aligned with an accumulator when the current leaf count is a
-multiple of the subtree size `2^height`.  Equivalently, `height` does not
-exceed the smallest existing peak height; the empty MMR accepts every height. -/
+/-- A height is aligned with a leaf count when it is a multiple of the subtree
+size `2^height`.  Equivalently, `height` does not exceed the smallest existing
+peak height; the empty MMR accepts every height. -/
+def alignedAt (leafCount : Nat) (height : Nat) : Prop :=
+  leafCount % 2 ^ height = 0
+
+/-- A height is aligned with an accumulator when aligned at its `leafCount`. -/
 def aligned (m : Acc α) (height : Nat) : Prop :=
-  m.leafCount % 2 ^ height = 0
+  alignedAt m.leafCount height
+
+/-- Computable version of `alignedAt`. -/
+def alignedAt? (leafCount : Nat) (height : Nat) : Bool :=
+  decide (leafCount % 2 ^ height = 0)
 
 /-- Computable version of `aligned`. -/
 def aligned? (m : Acc α) (height : Nat) : Bool :=
-  decide (m.leafCount % 2 ^ height = 0)
+  alignedAt? m.leafCount height
 
 /-- Computably check that a chunk's peak heights are aligned with the current
 `leafCount`, returning `true` iff every height is aligned at the moment it
@@ -70,7 +78,7 @@ would be pushed.  Only heights matter, so the peak hashes are ignored. -/
 def validChunk? (leafCount : Nat) : Chunk α → Bool
   | [] => true
   | (height, _) :: rest =>
-    if leafCount % 2 ^ height = 0 then
+    if alignedAt? leafCount height then
       validChunk? (leafCount + 2 ^ height) rest
     else
       false
