@@ -1,0 +1,10 @@
+name = "MMR"
+version = "0.1.0"
+defaultTargets = ["mmr"]
+
+[[lean_lib]]
+name = "MMR"
+
+[[lean_exe]]
+name = "mmr"
+root = "Main"
