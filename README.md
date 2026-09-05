@@ -69,49 +69,13 @@ Although internal nodes are not stored, a canonical root can be computed on dema
 
 ### Core invariants
 
-These results hold without any alignment condition:
-
-- **The empty accumulator satisfies the canonical invariant.**
-
-  ```lean
-  theorem empty_valid (α : Type u) : (empty α).Valid
-  ```
-
-- **Single-leaf append preserves the canonical invariant.**
-
-  ```lean
-  theorem append_peaks_length {α : Type u} (hash : α → α → α) (m : Acc α) (leaf : α)
-      (h : m.Valid) :
-      (append hash m leaf).Valid
-  ```
-
-- **Subtree append preserves the canonical invariant.**
-
-  ```lean
-  theorem appendPeak_peaks_length {α : Type u} (hash : α → α → α) (m : Acc α) (height : Nat) (peak : α)
-      (h : m.Valid) :
-      (appendPeak hash height peak m).Valid
-  ```
-
-- **Chunk append preserves the canonical invariant for any chunk.**
-
-  ```lean
-  theorem appendPeaks_peaks_length {α : Type u} (hash : α → α → α) (m : Acc α) (chunk : List (Nat × α))
-      (h : m.Valid) :
-      (appendPeaks hash m chunk).Valid
-  ```
-
-- **The leaf count tracks the number of appended leaves exactly.**
-
-  ```lean
-  theorem appendPeaks_leafCount {α : Type u} (hash : α → α → α) (m : Acc α) (chunk : List (Nat × α)) :
-      (appendPeaks hash m chunk).leafCount =
-        m.leafCount + chunk.foldl (fun acc hp => acc + 2 ^ hp.1) 0
-  ```
-
-- **Supporting binary-carry lemmas**, including the one-step peak-count recurrence and the length behavior of `mergeCarry`.
-
-All proofs in this section are independent of the concrete hash function.
+`Acc.Valid` — the canonical peak-count invariant
+(`m.peaks.length = popcount m.leafCount`) — holds for every append operation
+(`append`, `appendPeak`, `appendPeaks`) unconditionally, with no alignment
+required; `leafCount` likewise always tracks the number of appended leaves
+exactly. These are the boring-but-necessary facts, proved in
+[`MMR/Properties.lean`](MMR/Properties.lean) independently of the concrete
+hash function. The interesting part is what alignment adds — see below.
 
 ### Append-only semantics under aligned input
 
