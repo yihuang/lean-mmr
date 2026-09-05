@@ -2,6 +2,14 @@
 
 A formally verified, minimal [Merkle Mountain Range (MMR)](https://docs.grin.mw/wiki/chain-state/merkle-mountain-range/) accumulator implemented in [Lean 4](https://lean-lang.org/).
 
+> **Highlight — `aligned` is exactly the right condition.** The one-bit check
+> `leafCount % 2 ^ height = 0` is *proved* to sit precisely on the boundary
+> between safety and append-only semantics: with it, appends are provably the
+> canonical MMR extension (stable leaf indices, history never rewritten);
+> without it, a machine-checked counterexample shows the result is no longer
+> the canonical MMR — even though the peak-count invariant still holds.
+> See [The discovery](#the-discovery-aligned-is-exactly-the-right-condition).
+
 ## Overview
 
 The accumulator stores only two pieces of state:
