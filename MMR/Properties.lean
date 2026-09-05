@@ -245,6 +245,8 @@ theorem appendPeaks_leafCount {α : Type} (hash : α → α → α) (m : Acc α)
       cases hp with
       | mk h peak =>
         simp [appendPeaks]
+        rw [show (List.foldl (fun acc hp => appendPeak hash hp.1 hp.2 acc) (appendPeak hash h peak m) rest) =
+            appendPeaks hash (appendPeak hash h peak m) rest by rfl]
         rw [ih (appendPeak hash h peak m)]
         rw [appendPeak_leafCount]
         rw [chunk_foldl_add rest (2 ^ h)]

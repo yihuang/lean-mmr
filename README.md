@@ -46,9 +46,8 @@ def appendPeak (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α)
 def append (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α :=
   appendPeak hash 0 leaf m
 
-def appendPeaks (hash : α → α → α) (m : Acc α) : Chunk α → Acc α
-  | [] => m
-  | (height, peak) :: rest => appendPeaks hash (appendPeak hash height peak m) rest
+def appendPeaks (hash : α → α → α) (m : Acc α) (chunk : Chunk α) : Acc α :=
+  chunk.foldl (fun acc hp => appendPeak hash hp.1 hp.2 acc) m
 
 def ValidChunk (hash : α → α → α) (m : Acc α) : Chunk α → Prop
   | [] => True

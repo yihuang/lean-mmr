@@ -93,9 +93,8 @@ def append (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α :=
 /-- Fold a list of aligned peaks into an accumulator in order.  Each peak is a
 complete subtree of `2^height` leaves, so this is more general than appending
 a list of individual leaves. -/
-def appendPeaks (hash : α → α → α) (m : Acc α) : Chunk α → Acc α
-  | [] => m
-  | (height, peak) :: rest => appendPeaks hash (appendPeak hash height peak m) rest
+def appendPeaks (hash : α → α → α) (m : Acc α) (chunk : Chunk α) : Acc α :=
+  chunk.foldl (fun acc hp => appendPeak hash hp.1 hp.2 acc) m
 
 /-- A chunk is valid for append-only semantics when every element is aligned at
 the moment it is pushed. -/
