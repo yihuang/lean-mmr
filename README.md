@@ -14,7 +14,7 @@ properties are independent of the concrete hash.
 
 ## Structure and operations
 
-The implementation is intentionally small; the core code is:
+Interfaces:
 
 ```lean
 namespace MMR
@@ -35,13 +35,8 @@ def aligned (m : Acc α) (height : Nat) : Prop :=
   m.leafCount % 2 ^ height = 0
 
 def mergeCarry (hash : α → α → α) : Nat → α → List α → List α
-  | 0, x, peaks => x :: peaks
-  | n + 1, x, p :: peaks => mergeCarry hash n (hash p x) peaks
-  | _c + 1, x, [] => [x]
 
-def appendPeak (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α) : Acc α :=
-  { peaks := mergeCarry hash (trailingOnes (m.leafCount / 2 ^ height)) peak m.peaks,
-    leafCount := m.leafCount + 2 ^ height }
+def appendPeak (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α) : Acc α
 
 def append (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α :=
   appendPeak hash 0 leaf m
@@ -50,13 +45,13 @@ def appendPeaks (hash : α → α → α) (m : Acc α) (chunk : Chunk α) : Acc 
   chunk.foldl (fun acc hp => appendPeak hash hp.1 hp.2 acc) m
 
 def ValidChunk (hash : α → α → α) (m : Acc α) : Chunk α → Prop
-  | [] => True
-  | (height, peak) :: rest =>
-    aligned m height ∧ ValidChunk hash (appendPeak hash height peak m) rest
 
 end Acc
 end MMR
 ```
+
+Only `append` and `appendPeaks` are inlined above; the other operations are
+interfaces whose full definitions live in `MMR/Basic.lean`.
 
 Key points:
 
