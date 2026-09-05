@@ -34,6 +34,10 @@ abbrev Chunk (α : Type u) := List (Nat × α)
 def aligned (m : Acc α) (height : Nat) : Prop :=
   m.leafCount % 2 ^ height = 0
 
+def aligned? (m : Acc α) (height : Nat) : Bool
+
+def validChunk? (leafCount : Nat) : Chunk α → Bool
+
 def mergeCarry (hash : α → α → α) : Nat → α → List α → List α
 
 def appendPeak (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α) : Acc α

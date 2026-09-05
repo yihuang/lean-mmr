@@ -60,6 +60,21 @@ exceed the smallest existing peak height; the empty MMR accepts every height. -/
 def aligned (m : Acc α) (height : Nat) : Prop :=
   m.leafCount % 2 ^ height = 0
 
+/-- Computable version of `aligned`. -/
+def aligned? (m : Acc α) (height : Nat) : Bool :=
+  decide (m.leafCount % 2 ^ height = 0)
+
+/-- Computably check that a chunk's peak heights are aligned with the current
+`leafCount`, returning `true` iff every height is aligned at the moment it
+would be pushed.  Only heights matter, so the peak hashes are ignored. -/
+def validChunk? (leafCount : Nat) : Chunk α → Bool
+  | [] => true
+  | (height, _) :: rest =>
+    if leafCount % 2 ^ height = 0 then
+      validChunk? (leafCount + 2 ^ height) rest
+    else
+      false
+
 /-- Carry-merge:
   `mergeCarry hash c x peaks` takes the new leaf `x` and merges it with the
   first `c` entries of `peaks` (the rightmost peaks).  The first merge is
