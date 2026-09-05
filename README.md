@@ -25,10 +25,30 @@ structure Acc (α : Type u) where
 The main operations are:
 
 ```lean
-empty    (α : Type u) : Acc α
-append   (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α
-appendList (hash : α → α → α) (initial : Acc α) (leaves : List α) : Acc α
+empty         (α : Type u) : Acc α
+appendPeak    (hash : α → α → α) (height : Nat) (peak : α) (m : Acc α) : Acc α
+append        (hash : α → α → α) (m : Acc α) (leaf : α) : Acc α
+mergeUnordered (hash : α → α → α) (m : Acc α) : Chunk α → Acc α
+merge          (hash : α → α → α) (m : Acc α) : Chunk α → Option (Acc α)
+appendList     (hash : α → α → α) (initial : Acc α) (leaves : List α) : Acc α
 ```
+
+where a chunk is an ordered list of aligned complete subtrees:
+
+```lean
+abbrev Chunk (α : Type u) := List (Nat × α)  -- (height, peak)
+```
+
+Key points:
+
+- `appendPeak` is the core primitive: it appends a complete subtree with
+  `2^height` leaves, right-merging it into existing peaks while preserving
+  stable leaf indices.
+- Single-leaf `append` is just `appendPeak height 0`.
+- `mergeUnordered` folds `appendPeak` over a chunk without validating it.
+- `merge` is the safe wrapper: it returns `some` only when every chunk element
+  is aligned at the moment it is pushed (`aligned m height`).
+- `appendList` is a convenience derived from repeated single-leaf `append`.
 
 Appending uses two auxiliary definitions:
 
@@ -37,8 +57,8 @@ Appending uses two auxiliary definitions:
 - `mergeCarry hash c leaf peaks` — the carry-merge loop that consumes `c`
   rightmost peaks and produces the new peak list.
 
-Only `peaks` and `leafCount` are consulted or updated by `append`; no full
-tree storage is needed.
+Only `peaks` and `leafCount` are consulted or updated; no full tree storage is
+needed.
 
 Although the accumulator does not store internal nodes, a single root can
 still be computed on the fly from the minimal state by *bagging the peaks*:

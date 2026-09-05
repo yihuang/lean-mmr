@@ -148,7 +148,7 @@ theorem mergeCarry_length_eq {α : Type} (hash : α → α → α) (c : Nat) (x 
 
 theorem append_leafCount (hash : α → α → α) (m : Acc α) (leaf : α) :
     (append hash m leaf).leafCount = m.leafCount + 1 := by
-  simp [append]
+  simp [append, appendPeak]
 
 /-- Appending preserves the invariant `peaks.length = popcount leafCount`. -/
 theorem append_peaks_length {α : Type} (hash : α → α → α) (m : Acc α) (leaf : α)
@@ -157,13 +157,20 @@ theorem append_peaks_length {α : Type} (hash : α → α → α) (m : Acc α) (
   have hle : trailingOnes m.leafCount ≤ m.peaks.length := by
     rw [h]
     exact trailingOnes_le_popcount m.leafCount
-  rw [append]
+  have hpow : m.leafCount / 2 ^ 0 = m.leafCount := by simp
+  change (mergeCarry hash (trailingOnes (m.leafCount / 2 ^ 0)) leaf m.peaks).length =
+    popcount (m.leafCount + 1)
+  rw [hpow]
   have hmerge := mergeCarry_length_eq hash (trailingOnes m.leafCount) leaf m.peaks
   rw [hmerge]
   rw [h]
   rw [popcount_succ_eq_sub]
   have hle' : trailingOnes m.leafCount ≤ popcount m.leafCount := by simpa [h] using hle
   simp [hle']
+
+theorem appendPeak_leafCount (hash : α → α → α) (h : Nat) (peak : α) (m : Acc α) :
+    (appendPeak hash h peak m).leafCount = m.leafCount + 2 ^ h := by
+  simp [appendPeak]
 
 theorem appendList_leafCount {α : Type} (hash : α → α → α) (m : Acc α) (leaves : List α) :
     (appendList hash m leaves).leafCount = m.leafCount + leaves.length := by
@@ -186,15 +193,14 @@ theorem appendList_peaks_length {α : Type} (hash : α → α → α) (m : Acc �
   | nil => simpa [appendList] using h
   | cons a as ih =>
       simp [appendList]
-      have h₁ : (append hash m a).peaks.length = popcount (m.leafCount + 1) :=
-        append_peaks_length hash m a h
+      have h₁ : (append hash m a).peaks.length = popcount (m.leafCount + 1) := append_peaks_length hash m a h
       have h₂ : (appendList hash (append hash m a) as).peaks.length =
           popcount ((append hash m a).leafCount + as.length) := ih (append hash m a) h₁
       change (appendList hash (append hash m a) as).peaks.length =
         popcount (m.leafCount + (as.length + 1))
       rw [h₂]
       congr 1
-      simp [append]
+      rw [append_leafCount]
       omega
 
 /-- From the empty accumulator, `n` leaves produce exactly `popcount n`
@@ -206,6 +212,13 @@ theorem appendList_peaks_length_empty (α : Type) (hash : α → α → α) (lea
 
 /-- `appendList` is compositional: appending `as ++ bs` in one batch gives
 the same state as appending `as` and then `bs`. -/
+theorem mergeUnordered_append {α : Type} (hash : α → α → α) (m : Acc α) (as bs : Chunk α) :
+    mergeUnordered hash m (as ++ bs) = mergeUnordered hash (mergeUnordered hash m as) bs := by
+  induction as generalizing m with
+  | nil => simp [mergeUnordered]
+  | cons a as ih =>
+      simp [mergeUnordered, ih]
+
 theorem appendList_append {α : Type} (hash : α → α → α) (m : Acc α) (as bs : List α) :
     appendList hash m (as ++ bs) = appendList hash (appendList hash m as) bs := by
   simp [appendList, List.foldl_append]
