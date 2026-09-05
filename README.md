@@ -40,6 +40,13 @@ Appending uses two auxiliary definitions:
 Only `peaks` and `leafCount` are consulted or updated by `append`; no full
 tree storage is needed.
 
+Although the accumulator does not store internal nodes, a single root can
+still be computed on the fly from the minimal state by *bagging the peaks*:
+fold the peaks from right to left with `hash`, optionally including
+`leafCount` as a domain-separation prefix in the outer hash. This needs only
+the already-available `peaks` and `leafCount`, so the root can be derived
+whenever a verifier needs it without keeping the full tree around.
+
 ## Proved main theorems
 
 The machine-checked properties in `MMR/Properties.lean` include:
