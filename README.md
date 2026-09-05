@@ -105,7 +105,17 @@ and append-only semantics — not a merely convenient sufficient side condition:
    aligned, the implementation's carry-merge *is* the canonical MMR extension
    (`specPeaks_aligned_step`), so appends extend the history with stable leaf
    indices (`appendPeak_spec`, `append_spec`, `appendPeaks_spec`).
-3. **Alignment is necessary.** Dropping it provably breaks canonicalness: at the
+3. **Alignment is necessary.** Structurally, the height profile of the
+   implementation's append equals the canonical height profile of `n + 2^h`
+   leaves *if and only if* `n` is aligned at `h`; every unaligned append
+   changes the forest shape:
+
+   ```lean
+   theorem appendHeights_eq_iff_aligned (n h : Nat) :
+       appendHeights n h = specHeights (n + 2 ^ h) ↔ alignedAt n h
+   ```
+
+   At the hash level, dropping alignment provably breaks canonicalness: at the
    unaligned point `n = 1`, `h = 1`, feeding the *genuine* subtree root to the
    very same operation provably yields peaks that are not the canonical peaks of
    the extended 3-leaf history — the appended subtree straddles the existing

@@ -26,7 +26,10 @@ condition:
   aligned, the implementation's carry-merge *is* the canonical MMR
   extension, giving stable leaf indices (`appendPeak_spec`,
   `append_spec`, `appendPeaks_spec`).
-* **Necessity.**  `unaligned_appendPeak_not_spec`: a machine-checked
+* **Necessity.**  `appendHeights_eq_iff_aligned`: structurally, the
+  implementation's append has the canonical height profile *exactly* when
+  the input is aligned — every unaligned append changes the shape of the
+  forest.  `unaligned_appendPeak_not_spec`: a machine-checked hash-level
   counterexample at the unaligned point `n = 1, h = 1` — the very same
   operation, fed the genuine subtree root, provably produces peaks that are
   not the canonical peaks of the extended history, so leaf indices shift.
@@ -203,6 +206,157 @@ theorem alignedAt_iff_le_trailingZeros (n h : Nat) (hn : 0 < n) :
             rw [Nat.pow_zero]
             exact Nat.mod_one _
   exact key n hn h
+
+/-- For `0 < n` and `trailingZeros n < h`, adding `2 ^ h` only touches bits at
+position `h` and above, so the newest peak keeps its height. -/
+theorem trailingZeros_add_pow (n : Nat) :
+    0 < n → ∀ h, trailingZeros n < h →
+      trailingZeros (n + 2 ^ h) = trailingZeros n := by
+  induction n using Nat.strongRecOn with
+  | ind n ih =>
+    intro hn h hlt
+    rcases Nat.eq_zero_or_pos h with h0 | h1
+    · omega
+    · obtain ⟨h', hh⟩ : ∃ h', h = h' + 1 := ⟨h - 1, by omega⟩
+      have hpow : 2 ^ (h' + 1) = 2 * 2 ^ h' := by rw [Nat.pow_succ']
+      rcases Nat.mod_two_eq_zero_or_one n with hmod | hmod
+      · obtain ⟨j, hj⟩ : ∃ j, n = 2 * j := ⟨n / 2, by omega⟩
+        have hj0 : 0 < j := by omega
+        have htzn : trailingZeros n = trailingZeros j + 1 := by
+          rw [hj]
+          exact trailingZeros_even j hj0
+        have hsum : n + 2 ^ (h' + 1) = 2 * (j + 2 ^ h') := by
+          rw [hj, hpow, Nat.mul_add]
+        have hpos : 0 < j + 2 ^ h' := by omega
+        rw [hh, hsum, trailingZeros_even _ hpos,
+          ih j (by omega) hj0 h' (by omega), htzn]
+      · obtain ⟨j, hj⟩ : ∃ j, n = 2 * j + 1 := ⟨n / 2, by omega⟩
+        have htzn : trailingZeros n = 0 := by
+          rw [hj]
+          exact trailingZeros_odd j
+        have hsum : n + 2 ^ (h' + 1) = 2 * (j + 2 ^ h') + 1 := by
+          rw [hj, hpow, Nat.mul_add]
+          omega
+        rw [hh, hsum, trailingZeros_odd _, htzn]
+
+/-- Heights of the canonical peaks of `n` leaves, newest (smallest) first:
+the height analogue of `specPeaks`.  The canonical forest is determined by
+`n` alone, so this carries the structural content of the MMR independently
+of any hashing. -/
+def specHeights : Nat → List Nat
+  | 0 => []
+  | n + 1 =>
+    trailingZeros (n + 1) :: specHeights (n + 1 - 2 ^ trailingZeros (n + 1))
+termination_by n => n
+decreasing_by
+  all_goals
+    have hp : 0 < 2 ^ trailingZeros (n + 1) := Nat.two_pow_pos _
+    omega
+
+theorem specHeights_pos (n : Nat) (hn : 0 < n) :
+    specHeights n = trailingZeros n :: specHeights (n - 2 ^ trailingZeros n) := by
+  cases n with
+  | zero => omega
+  | succ m => rw [specHeights]
+
+theorem specHeights_pow_mul_odd (h k : Nat) :
+    specHeights (2 ^ h * (2 * k + 1)) = h :: specHeights (2 ^ h * 2 * k) := by
+  have hpos : 0 < 2 ^ h * (2 * k + 1) :=
+    Nat.mul_pos (Nat.two_pow_pos h) (by omega)
+  have hsub : 2 ^ h * (2 * k + 1) - 2 ^ h = 2 ^ h * 2 * k := by
+    have hsplit : 2 ^ h * (2 * k + 1) = 2 ^ h * 2 * k + 2 ^ h :=
+      (two_pow_split_add h k).symm
+    rw [hsplit, Nat.add_sub_cancel]
+  rw [specHeights_pos _ hpos, trailingZeros_pow_mul_odd, hsub]
+
+/-- The height profile produced by appending a complete subtree of height
+`h` at leaf count `n`: the implementation's carry-merge consumes exactly
+`trailingOnes (n / 2 ^ h)` trailing peaks (see `popcount_add_pow`), leaving
+one new peak of height `h + trailingOnes (n / 2 ^ h)` in front of the
+untouched remainder.  This is the height analogue of `appendPeak`. -/
+def appendHeights (n h : Nat) : List Nat :=
+  (h + trailingOnes (n / 2 ^ h)) :: (specHeights n).drop (trailingOnes (n / 2 ^ h))
+
+/-- **Structural exactness of the alignment condition.**  Appending a
+complete subtree at leaf count `n` reproduces the canonical height profile
+of `n + 2 ^ h` leaves *if and only if* `n` is aligned at `h`.  Sufficiency
+is the height shadow of `specPeaks_aligned_step`.  Necessity holds at every
+unaligned point: the result's first peak has height
+`h + trailingOnes (n / 2 ^ h) ≥ h > trailingZeros n` while the canonical
+first peak has height exactly `trailingZeros n`.  Hence an unaligned append
+always changes the tree structure — which leaves each peak covers — and can
+agree with the canonical peaks only through hash collisions (see
+`unaligned_appendPeak_not_spec` for a hash-level witness). -/
+theorem appendHeights_eq_iff_aligned (n h : Nat) :
+    appendHeights n h = specHeights (n + 2 ^ h) ↔ alignedAt n h := by
+  constructor
+  · intro heq
+    cases n with
+    | zero =>
+        show (0 : Nat) % 2 ^ h = 0
+        exact Nat.zero_mod _
+    | succ m =>
+        by_cases hal : alignedAt (m + 1) h
+        · exact hal
+        · exfalso
+          have hn : 0 < m + 1 := Nat.succ_pos m
+          have hgt : trailingZeros (m + 1) < h := by
+            rcases Nat.le_total h (trailingZeros (m + 1)) with hle | hle
+            · exact absurd ((alignedAt_iff_le_trailingZeros (m + 1) h hn).mpr hle) hal
+            · have hnot : ¬ h ≤ trailingZeros (m + 1) := by
+                intro hh
+                exact hal ((alignedAt_iff_le_trailingZeros (m + 1) h hn).mpr hh)
+              omega
+          have hcanon : trailingZeros (m + 1 + 2 ^ h) = trailingZeros (m + 1) :=
+            trailingZeros_add_pow (m + 1) hn h hgt
+          have hrest' := specHeights_pos (m + 1) hn
+          have hrest := specHeights_pos (m + 1 + 2 ^ h) (by omega)
+          simp only [appendHeights] at heq
+          rw [hrest', hrest, hcanon] at heq
+          injection heq with hhead _
+          have hcontra : trailingZeros (m + 1) < trailingZeros (m + 1) := by
+            calc trailingZeros (m + 1) < h := hgt
+              _ ≤ h + trailingOnes ((m + 1) / 2 ^ h) := Nat.le_add_right _ _
+              _ = trailingZeros (m + 1) := hhead
+          exact Nat.lt_irrefl _ hcontra
+  · -- aligned ⇒ the height profiles agree
+    intro hal
+    obtain ⟨q, hq⟩ : ∃ q, n = 2 ^ h * q := by
+      refine ⟨n / 2 ^ h, ?_⟩
+      have hdm := Nat.div_add_mod n (2 ^ h)
+      have h0 : n % 2 ^ h = 0 := hal
+      rw [h0, Nat.add_zero] at hdm
+      exact hdm.symm
+    have key : ∀ q h, appendHeights (2 ^ h * q) h
+        = specHeights (2 ^ h * (q + 1)) := by
+      intro q
+      induction q using Nat.strongRecOn with
+      | ind q ih =>
+        intro h
+        rcases Nat.mod_two_eq_zero_or_one q with hmod | hmod
+        · obtain ⟨j, hj⟩ : ∃ j, q = 2 * j := ⟨q / 2, by omega⟩
+          rw [hj]
+          simp only [appendHeights]
+          rw [two_pow_mul_div h (2 * j), trailingOnes_even j, Nat.add_zero,
+            List.drop_zero, specHeights_pow_mul_odd h j, Nat.mul_assoc]
+        · obtain ⟨k, hk⟩ : ∃ k, q = 2 * k + 1 := ⟨q / 2, by omega⟩
+          have hc : trailingOnes (2 * k + 1) = trailingOnes k + 1 := trailingOnes_odd k
+          have hdrop : (h :: specHeights (2 ^ h * 2 * k)).drop (trailingOnes k + 1)
+              = (specHeights (2 ^ h * 2 * k)).drop (trailingOnes k) := by
+            simp [List.drop]
+          have hR : 2 ^ h * (2 * k + 1 + 1) = 2 ^ (h + 1) * (k + 1) := by
+            have h1 : 2 * k + 1 + 1 = 2 * (k + 1) := by omega
+            rw [h1, ← Nat.mul_assoc, two_pow_succ_mul h (k + 1)]
+          rw [hk]
+          simp only [appendHeights]
+          rw [two_pow_mul_div h (2 * k + 1), hc, specHeights_pow_mul_odd h k,
+            hdrop, hR, ← ih k (by omega) (h + 1)]
+          simp only [appendHeights]
+          rw [two_pow_mul_div (h + 1) k, ← two_pow_succ_mul h k]
+          congr 1
+          omega
+    rw [hq]
+    exact key q h
 
 /-- Every positive number is a power of two times an odd number. -/
 theorem exists_pow_two_mul_odd (n : Nat) (hn : 0 < n) :
